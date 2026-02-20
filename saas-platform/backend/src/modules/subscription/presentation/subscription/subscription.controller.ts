@@ -9,6 +9,7 @@ import { UpgradeSubscriptionDto } from '../dto/upgrade-subscription.dto';
 import { CancelSubscriptionDto } from '../dto/cancel-subscription.dto';
 import { SubscriptionPlan } from '../../domain/subscription.entity';
 import { ActiveSubscriptionGuard } from '../../../../shared/guards/active-subscription.guard';
+import { Idempotent } from '../../../../shared/decorators/idempotency.decorator';
 
 @Controller()
 export class SubscriptionController {
@@ -18,9 +19,10 @@ export class SubscriptionController {
     private readonly upgradeSubscriptionUseCase: UpgradeSubscriptionUseCase,
     private readonly cancelSubscriptionUseCase: CancelSubscriptionUseCase,
     private readonly getSubscriptionStatusUseCase: GetSubscriptionStatusUseCase,
-  ) {}
+  ) { }
 
   @Post('organizations')
+  @Idempotent()
   async createOrganization(@Body() dto: CreateOrganizationDto) {
     const result = await this.createOrganizationUseCase.execute({
       name: dto.name,
@@ -34,6 +36,7 @@ export class SubscriptionController {
 
   @Post('subscriptions/upgrade')
   @UseGuards(ActiveSubscriptionGuard)
+  @Idempotent()
   async upgrade(@Body() dto: UpgradeSubscriptionDto) {
     const subscription = await this.upgradeSubscriptionUseCase.execute({
       organizationId: dto.organizationId,
@@ -46,6 +49,7 @@ export class SubscriptionController {
 
   @Post('subscriptions/cancel')
   @UseGuards(ActiveSubscriptionGuard)
+  @Idempotent()
   async cancel(@Body() dto: CancelSubscriptionDto) {
     const subscription = await this.cancelSubscriptionUseCase.execute({
       organizationId: dto.organizationId,

@@ -45,6 +45,8 @@ model Subscription {
   payments     Payment[]
 
   @@index([organizationId])
+  @@index([status])
+  @@index([currentPeriodEnd])
 }
 
 model Invitation {
@@ -106,10 +108,25 @@ model Payment {
 
   @@index([organizationId])
   @@index([subscriptionId])
+  @@index([status])
 }
 
 model ProcessedWebhookEvent {
   id          String   @id // Use Stripe Event ID
   type        String
   processedAt DateTime @default(now())
+}
+
+model IdempotencyRecord {
+  id             String   @id // Idempotency-Key
+  userId         String
+  requestPath    String
+  requestBodyHash String
+  responseStatus Int
+  responseBody   Json
+  createdAt      DateTime @default(now())
+  expiresAt      DateTime
+
+  @@unique([id, userId])
+  @@index([expiresAt])
 }

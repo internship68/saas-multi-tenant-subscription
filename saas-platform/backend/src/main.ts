@@ -3,14 +3,17 @@ import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './shared/filters/http-exception.filter';
 import { ResponseInterceptor } from './shared/interceptors/response.interceptor';
+import { Logger } from 'nestjs-pino';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, {
-    // Required for Stripe webhook signature validation.
-    // Makes req.rawBody (Buffer) available alongside parsed JSON body.
-    // Does NOT affect JSON parsing for other routes.
+  const app = await NestFactory.create(AppModule.forRoot(), {
     rawBody: true,
   });
+
+  const role = process.env.APP_ROLE || 'ALL';
+  const port = process.env.PORT ?? 3000;
+
+  app.useLogger(app.get(Logger));
 
 
   app.useGlobalPipes(
@@ -27,7 +30,13 @@ async function bootstrap() {
   app.useGlobalFilters(new HttpExceptionFilter());
   app.useGlobalInterceptors(new ResponseInterceptor());
 
-  await app.listen(process.env.PORT ?? 3000);
+  if (role === 'API' || role === 'ALL') {
+    await app.listen(port);
+    console.log(`API is running on port ${port}`);
+  } else {
+    await app.init();
+    console.log(`Worker is running...`);
+  }
 }
 
 bootstrap();

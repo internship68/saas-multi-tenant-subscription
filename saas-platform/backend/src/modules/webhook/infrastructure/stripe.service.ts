@@ -1,4 +1,5 @@
 import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
+import Stripe from 'stripe';
 import {
     InvoiceFailedEventData,
     PaymentSucceededEventData,
@@ -44,54 +45,36 @@ export class StripeService {
         signature: string,
     ): StripeWebhookEvent {
         const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+        const secretKey = process.env.STRIPE_SECRET_KEY;
 
-        if (!webhookSecret) {
+        if (!webhookSecret || !secretKey) {
             throw new Error(
-                'STRIPE_WEBHOOK_SECRET is not configured. ' +
-                'Set it in your .env file.',
+                'Missing Stripe configuration (STRIPE_SECRET_KEY or STRIPE_WEBHOOK_SECRET).',
             );
         }
 
-        if (!signature) {
-            throw new UnauthorizedException('Missing stripe-signature header');
-        }
+        const stripe = new Stripe(secretKey);
 
-        // ─── TODO: Replace with real Stripe SDK validation ───────────────────
-        // When real Stripe SDK is installed:
-        //
-        //   import Stripe from 'stripe';
-        //   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
-        //   try {
-        //     return stripe.webhooks.constructEvent(rawBody, signature, webhookSecret);
-        //   } catch {
-        //     throw new UnauthorizedException('Invalid Stripe webhook signature');
-        //   }
-        //
-        // ─── SKELETON: Simple constant-time signature check ──────────────────
-        // For development/testing: accept events with test signature token
-        const isTestMode = process.env.STRIPE_TEST_MODE === 'true';
-        if (!isTestMode) {
-            // In production skeleton mode: validate signature format minimally
-            if (!signature.startsWith('t=') || !signature.includes(',v1=')) {
-                throw new UnauthorizedException('Invalid Stripe signature format');
-            }
-        }
-
-        this.logger.debug(
-            `Stripe signature validated (skeleton mode). Body size: ${rawBody.length} bytes`,
-        );
-
-        // Parse the raw body as a Stripe event
         try {
-            const event = JSON.parse(rawBody.toString('utf-8')) as StripeWebhookEvent;
+            const event = stripe.webhooks.constructEvent(
+                rawBody,
+                signature,
+                webhookSecret,
+            );
 
-            if (!event.id || !event.type || !event.data?.object) {
-                throw new Error('Invalid Stripe event structure');
-            }
-
-            return event;
-        } catch {
-            throw new UnauthorizedException('Invalid Stripe event payload');
+            // Map Stripe event to our internal StripeWebhookEvent type
+            return {
+                id: event.id,
+                type: event.type,
+                created: event.created,
+                data: {
+                    object: event.data.object as unknown as Record<string, unknown>,
+                },
+            };
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'Unknown error';
+            this.logger.error(`Stripe signature validation failed: ${message}`);
+            throw new UnauthorizedException(`Invalid Stripe signature: ${message}`);
         }
     }
 

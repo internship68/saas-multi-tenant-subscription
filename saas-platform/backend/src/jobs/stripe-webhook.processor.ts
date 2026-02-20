@@ -45,63 +45,76 @@ export class StripeWebhookProcessor extends WorkerHost {
 
     async process(job: Job<StripeWebhookJobPayload>): Promise<void> {
         const { eventId, eventType } = job.data;
+        const startTime = Date.now();
+
+        this.logger.log({
+            msg: `Job started`,
+            jobId: job.id,
+            jobName: job.name,
+            eventId,
+            eventType,
+        });
 
         // ── 1. Idempotency Check ──────────────────────────────────────────────
-        // Check if we've already successfully processed this event ID.
-        // BullMQ's jobId deduplication handles recent duplicates, but DB record
-        // provides an absolute long-term guarantee.
         const alreadyProcessed = await this.prisma.processedWebhookEvent.findUnique({
             where: { id: eventId },
         });
 
         if (alreadyProcessed) {
-            this.logger.warn(
-                `Stripe event [${eventId}] already processed on ${alreadyProcessed.processedAt}. Skipping duplicate.`,
-            );
+            this.logger.warn({
+                msg: `Duplicate event skipped`,
+                eventId,
+                processedAt: alreadyProcessed.processedAt,
+            });
             return;
         }
 
-        this.logger.log(
-            `Processing Stripe job [${job.name}] id=${job.id} eventId=${eventId}`,
-        );
-
         // ── 2. Route to UseCase ────────────────────────────────────────────────
-        switch (job.name) {
-            case JOB_NAMES.STRIPE_PAYMENT_SUCCEEDED:
-                await this.handlePaymentSucceeded.execute(
-                    job.data.data as PaymentSucceededEventData,
-                );
-                break;
+        try {
+            switch (job.name) {
+                case JOB_NAMES.STRIPE_PAYMENT_SUCCEEDED:
+                    await this.handlePaymentSucceeded.execute(
+                        job.data.data as PaymentSucceededEventData,
+                    );
+                    break;
 
-            case JOB_NAMES.STRIPE_SUBSCRIPTION_CANCELED:
-                await this.handleSubscriptionCanceled.execute(
-                    job.data.data as SubscriptionCanceledEventData,
-                );
-                break;
+                case JOB_NAMES.STRIPE_SUBSCRIPTION_CANCELED:
+                    await this.handleSubscriptionCanceled.execute(
+                        job.data.data as SubscriptionCanceledEventData,
+                    );
+                    break;
 
-            case JOB_NAMES.STRIPE_INVOICE_FAILED:
-                await this.handleInvoiceFailed.execute(
-                    job.data.data as InvoiceFailedEventData,
-                );
-                break;
+                case JOB_NAMES.STRIPE_INVOICE_FAILED:
+                    await this.handleInvoiceFailed.execute(
+                        job.data.data as InvoiceFailedEventData,
+                    );
+                    break;
 
-            default:
-                this.logger.warn(
-                    `Unknown Stripe job name: "${job.name}" — skipping.`,
-                );
-                return;
+                default:
+                    this.logger.warn(`Unknown job: ${job.name}`);
+                    return;
+            }
+
+            // ── 3. Record success for idempotency ──────────────────────────────────
+            await this.prisma.processedWebhookEvent.create({
+                data: { id: eventId, type: eventType },
+            });
+
+            this.logger.log({
+                msg: `Job completed`,
+                jobId: job.id,
+                durationMs: Date.now() - startTime,
+                eventId,
+            });
+        } catch (error) {
+            this.logger.error({
+                msg: `Job failed`,
+                jobId: job.id,
+                error: error instanceof Error ? error.message : error,
+                stack: error instanceof Error ? error.stack : undefined,
+                eventId,
+            });
+            throw error; // Let BullMQ handle retry
         }
-
-        // ── 3. Record success for idempotency ──────────────────────────────────
-        await this.prisma.processedWebhookEvent.create({
-            data: {
-                id: eventId,
-                type: eventType,
-            },
-        });
-
-        this.logger.log(
-            `Stripe job [${job.name}] id=${job.id} completed successfully.`,
-        );
     }
 }
