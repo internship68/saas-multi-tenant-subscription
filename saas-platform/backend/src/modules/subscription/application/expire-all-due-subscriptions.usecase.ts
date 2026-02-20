@@ -1,6 +1,8 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { SubscriptionRepository } from '../domain/subscription.repository.interface';
 import { Subscription } from '../domain/subscription.entity';
+import { SubscriptionChangedEvent } from '../domain/events/subscription-changed.event';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 
 export interface ExpireAllDueSubscriptionsResult {
     total: number;
@@ -27,6 +29,7 @@ export class ExpireAllDueSubscriptionsUseCase {
     constructor(
         @Inject('SubscriptionRepository')
         private readonly repository: SubscriptionRepository,
+        private readonly eventEmitter: EventEmitter2,
     ) { }
 
     async execute(): Promise<ExpireAllDueSubscriptionsResult> {
@@ -51,6 +54,17 @@ export class ExpireAllDueSubscriptionsUseCase {
                 subscription.expire();
                 await this.repository.save(subscription);
                 result.succeeded++;
+
+                // Emit audit event
+                this.eventEmitter.emit(
+                    'domain.subscription_changed',
+                    new SubscriptionChangedEvent(
+                        organizationId,
+                        subscription.getId(),
+                        'EXPIRED',
+                        { plan: subscription.getPlan(), expiredAt: new Date(), batch: true }
+                    )
+                );
 
                 this.logger.log(`Expired subscription for org: ${organizationId}`);
             } catch (error: unknown) {

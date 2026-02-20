@@ -17,7 +17,7 @@ export class SubscriptionExpirationScheduler implements OnApplicationBootstrap {
     private readonly logger = new Logger(SubscriptionExpirationScheduler.name);
 
     constructor(
-        @InjectQueue(QUEUE_NAMES.SUBSCRIPTION_EXPIRATION)
+        @InjectQueue(QUEUE_NAMES.BILLING_EXPIRATION)
         private readonly queue: Queue,
     ) { }
 
@@ -44,6 +44,11 @@ export class SubscriptionExpirationScheduler implements OnApplicationBootstrap {
                     repeat: {
                         pattern: '0 0 * * *', // cron: daily at midnight UTC
                     },
+                    attempts: 3,
+                    backoff: {
+                        type: 'exponential',
+                        delay: 1000 * 60 * 5, // 5 minutes
+                    },
                     removeOnComplete: { count: 10 }, // keep last 10 completed jobs for debugging
                     removeOnFail: { count: 20 },     // keep last 20 failed jobs for investigation
                 },
@@ -51,7 +56,7 @@ export class SubscriptionExpirationScheduler implements OnApplicationBootstrap {
 
             this.logger.log(
                 `Registered repeatable job "${JOB_NAMES.EXPIRE_DUE_SUBSCRIPTIONS}" ` +
-                `on queue "${QUEUE_NAMES.SUBSCRIPTION_EXPIRATION}" — cron: 0 0 * * *`,
+                `on queue "${QUEUE_NAMES.BILLING_EXPIRATION}" — cron: 0 0 * * *`,
             );
         } catch (error: unknown) {
             const reason = error instanceof Error ? error.message : 'Unknown error';

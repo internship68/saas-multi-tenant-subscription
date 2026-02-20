@@ -9,7 +9,10 @@ import { PrismaSubscriptionRepository } from './infrastructure/prisma-subscripti
 import { PrismaOrganizationRepository } from './infrastructure/prisma-organization.repository';
 import { ActiveSubscriptionGuard } from '../../shared/guards/active-subscription.guard';
 
+import { UsageModule } from '../usage/usage.module';
+
 @Module({
+  imports: [UsageModule],
   controllers: [SubscriptionController],
   providers: [
     {
@@ -29,4 +32,4 @@ import { ActiveSubscriptionGuard } from '../../shared/guards/active-subscription
   ],
   exports: [GetSubscriptionStatusUseCase],
 })
-export class SubscriptionModule {}
+export class SubscriptionModule { }

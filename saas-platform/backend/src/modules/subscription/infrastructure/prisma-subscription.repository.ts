@@ -103,6 +103,22 @@ export class PrismaSubscriptionRepository implements SubscriptionRepository {
    *
    * Prisma query detail stays here — Domain remains unaware of it.
    */
+  async findById(id: string): Promise<Subscription | null> {
+    const model = await this.prisma.subscription.findUnique({
+      where: { id },
+    });
+
+    if (!model) return null;
+    return mapPrismaToDomain(model as PrismaSubscription);
+  }
+
+  /**
+   * Infrastructure implementation of the domain contract.
+   * Returns all subscriptions that are still ACTIVE in the DB but whose
+   * currentPeriodEnd has already passed the current timestamp.
+   *
+   * Prisma query detail stays here — Domain remains unaware of it.
+   */
   async findAllExpired(): Promise<Subscription[]> {
     const now = new Date();
 
@@ -113,6 +129,12 @@ export class PrismaSubscriptionRepository implements SubscriptionRepository {
       },
     });
 
-    return models.map(mapPrismaToDomain);
+    return models.map((m) => mapPrismaToDomain(m as PrismaSubscription));
+  }
+
+  async findAllDueForRenewal(): Promise<Subscription[]> {
+    // For this version, we treat subscriptions whose period ended as due for renewal
+    // In a real system, you might first try to charge, then renew or expire.
+    return this.findAllExpired();
   }
 }

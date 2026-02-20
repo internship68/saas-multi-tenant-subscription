@@ -21,7 +21,7 @@ export class Subscription {
     private currentPeriodStart: Date,
     private currentPeriodEnd: Date,
     private readonly createdAt: Date,
-  ) {}
+  ) { }
 
   static createFree(organizationId: string): Subscription {
     if (!organizationId || organizationId.trim() === '') {
@@ -153,6 +153,23 @@ export class Subscription {
     this.status = SubscriptionStatus.ACTIVE;
     this.currentPeriodStart = now;
     this.currentPeriodEnd = endDate;
+  }
+
+  renew(durationInDays: number): void {
+    if (this.status !== SubscriptionStatus.ACTIVE) {
+      throw new Error('Can only renew active subscriptions');
+    }
+
+    if (!durationInDays || durationInDays <= 0) {
+      throw new Error('Duration in days must be greater than 0');
+    }
+
+    const newStart = new Date(this.currentPeriodEnd);
+    const newEnd = new Date(newStart);
+    newEnd.setDate(newEnd.getDate() + durationInDays);
+
+    this.currentPeriodStart = newStart;
+    this.currentPeriodEnd = newEnd;
   }
 
   getId(): string {

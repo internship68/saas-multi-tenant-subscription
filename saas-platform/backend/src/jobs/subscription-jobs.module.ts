@@ -5,31 +5,36 @@ import { SubscriptionExpirationProcessor } from './subscription-expiration.proce
 import { SubscriptionExpirationScheduler } from './subscription-expiration.scheduler';
 import { ExpireAllDueSubscriptionsUseCase } from '../modules/subscription/application/expire-all-due-subscriptions.usecase';
 import { PrismaSubscriptionRepository } from '../modules/subscription/infrastructure/prisma-subscription.repository';
+import { SubscriptionResetProcessor } from './subscription-reset.processor';
+import { SubscriptionResetScheduler } from './subscription-reset.scheduler';
+import { ProcessPeriodicBillingUseCase } from '../modules/subscription/application/process-periodic-billing.usecase';
+import { PrismaUsageRepository } from '../modules/usage/infrastructure/prisma-usage.repository';
+import { PrismaService } from '../shared/prisma/prisma.service';
 
-/**
- * SubscriptionJobsModule — wires the subscription expiration queue,
- * processor, scheduler, and use case.
- *
- * BullMQ root connection is provided globally by QueueInfrastructureModule.
- * This module only registers the queue it owns.
- */
+import { UsageModule } from '../modules/usage/usage.module';
+
 @Module({
     imports: [
-        BullModule.registerQueue({
-            name: QUEUE_NAMES.SUBSCRIPTION_EXPIRATION,
-        }),
+        BullModule.registerQueue(
+            { name: QUEUE_NAMES.BILLING_EXPIRATION },
+            { name: QUEUE_NAMES.USAGE_RESET }
+        ),
+        UsageModule,
     ],
     providers: [
-        // Infrastructure: Prisma repository (fulfils Domain interface)
+        PrismaService,
         {
             provide: 'SubscriptionRepository',
             useClass: PrismaSubscriptionRepository,
         },
-        // Application use case
+        // Application use cases
         ExpireAllDueSubscriptionsUseCase,
-        // BullMQ processor & scheduler
+        ProcessPeriodicBillingUseCase,
+        // BullMQ processors & schedulers
         SubscriptionExpirationProcessor,
         SubscriptionExpirationScheduler,
+        SubscriptionResetProcessor,
+        SubscriptionResetScheduler,
     ],
 })
 export class SubscriptionJobsModule { }

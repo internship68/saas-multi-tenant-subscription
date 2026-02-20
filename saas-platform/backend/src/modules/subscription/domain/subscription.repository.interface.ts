@@ -9,4 +9,5 @@ export interface SubscriptionRepository {
    * Used by the expiration job to identify subscriptions that should be expired.
    */
   findAllExpired(): Promise<Subscription[]>;
+  findAllDueForRenewal(): Promise<Subscription[]>;
 }

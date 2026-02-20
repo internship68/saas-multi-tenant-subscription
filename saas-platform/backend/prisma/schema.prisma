@@ -13,6 +13,8 @@ model Organization {
   subscriptions Subscription[]
   users         User[]
   invitations   Invitation[]
+  usages        OrganizationUsage[]
+  payments      Payment[]
 }
 
 model User {
@@ -40,6 +42,7 @@ model Subscription {
   createdAt          DateTime @default(now())
 
   organization Organization @relation(fields: [organizationId], references: [id])
+  payments     Payment[]
 
   @@index([organizationId])
 }
@@ -72,4 +75,35 @@ model AuditLog {
 
   @@index([organizationId])
   @@index([entityId])
+}
+
+model OrganizationUsage {
+  id             String   @id @default(uuid())
+  organizationId String
+  type           String   // e.g., "API_CALLS"
+  currentValue   Int      @default(0)
+  limit          Int
+  resetAt        DateTime
+  updatedAt      DateTime @updatedAt
+
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  @@unique([organizationId, type])
+  @@index([organizationId])
+}
+
+model Payment {
+  id             String   @id @default(uuid())
+  organizationId String
+  subscriptionId String
+  amount         Float
+  currency       String   @default("USD")
+  status         String   // e.g., "SUCCEEDED", "FAILED", "PENDING"
+  createdAt      DateTime @default(now())
+
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  subscription   Subscription @relation(fields: [subscriptionId], references: [id])
+
+  @@index([organizationId])
+  @@index([subscriptionId])
 }

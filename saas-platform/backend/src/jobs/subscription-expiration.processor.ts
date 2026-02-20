@@ -15,7 +15,7 @@ import { ExpireAllDueSubscriptionsUseCase } from '../modules/subscription/applic
  * Layer contract: this file MUST NOT contain any business logic,
  * Prisma queries, or domain knowledge — it only orchestrates.
  */
-@Processor(QUEUE_NAMES.SUBSCRIPTION_EXPIRATION)
+@Processor(QUEUE_NAMES.BILLING_EXPIRATION)
 export class SubscriptionExpirationProcessor extends WorkerHost {
     private readonly logger = new Logger(SubscriptionExpirationProcessor.name);
 
@@ -27,7 +27,7 @@ export class SubscriptionExpirationProcessor extends WorkerHost {
 
     async process(job: Job): Promise<void> {
         this.logger.log(
-            `Processing job [${job.name}] id=${job.id} on queue "${QUEUE_NAMES.SUBSCRIPTION_EXPIRATION}"`,
+            `Processing job [${job.name}] id=${job.id} on queue "${QUEUE_NAMES.BILLING_EXPIRATION}"`,
         );
 
         if (job.name === JOB_NAMES.EXPIRE_DUE_SUBSCRIPTIONS) {
