@@ -23,6 +23,7 @@ This platform enables:
 # 🧱 Tech Stack
 
 ## Backend
+
 - NestJS
 - Prisma ORM
 - PostgreSQL
@@ -31,6 +32,7 @@ This platform enables:
 - JWT Authentication
 
 ## Frontend
+
 - Next.js (App Router)
 - React
 - TanStack Query
@@ -49,7 +51,6 @@ src/
 ├── infrastructure/
 ├── modules/
 └── common/
-
 
 ### Principles Applied
 
@@ -118,47 +119,46 @@ Payment
 ├── status
 └── organizationId (FK)
 
-
 ---
 
 # 🔌 API Overview
 
 ## Auth
 
-| Method | Endpoint | Description |
-|--------|----------|------------|
-| POST | /auth/register | Register new organization + owner |
-| POST | /auth/login | Login user |
+| Method | Endpoint       | Description                       |
+| ------ | -------------- | --------------------------------- |
+| POST   | /auth/register | Register new organization + owner |
+| POST   | /auth/login    | Login user                        |
 
 ---
 
 ## Users
 
-| Method | Endpoint | Description |
-|--------|----------|------------|
-| GET | /users | List organization users |
-| POST | /users | Create new user |
-| PATCH | /users/:id | Update user |
-| DELETE | /users/:id | Remove user |
+| Method | Endpoint   | Description             |
+| ------ | ---------- | ----------------------- |
+| GET    | /users     | List organization users |
+| POST   | /users     | Create new user         |
+| PATCH  | /users/:id | Update user             |
+| DELETE | /users/:id | Remove user             |
 
 ---
 
 ## Subscription
 
-| Method | Endpoint | Description |
-|--------|----------|------------|
-| GET | /subscription | Get current subscription |
-| POST | /subscription/upgrade | Upgrade plan |
-| POST | /subscription/cancel | Cancel subscription |
+| Method | Endpoint              | Description              |
+| ------ | --------------------- | ------------------------ |
+| GET    | /subscription         | Get current subscription |
+| POST   | /subscription/upgrade | Upgrade plan             |
+| POST   | /subscription/cancel  | Cancel subscription      |
 
 ---
 
 ## Usage
 
-| Method | Endpoint | Description |
-|--------|----------|------------|
-| GET | /usage | Get usage metrics |
-| POST | /usage/increment | Increment usage counter |
+| Method | Endpoint         | Description             |
+| ------ | ---------------- | ----------------------- |
+| GET    | /usage           | Get usage metrics       |
+| POST   | /usage/increment | Increment usage counter |
 
 ---
 
@@ -189,7 +189,6 @@ src/
 ├── providers/
 ├── hooks/
 └── types/
-
 
 ### Frontend Design Decisions
 
@@ -285,3 +284,4 @@ Scalable subscription logic
 Production-ready folder structuring
 
 Real-world engineering tradeoffs
+```

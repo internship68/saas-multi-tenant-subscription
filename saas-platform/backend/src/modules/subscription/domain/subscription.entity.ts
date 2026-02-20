@@ -1,4 +1,6 @@
-export enum PlanType {
+import { randomUUID } from 'crypto';
+
+export enum SubscriptionPlan {
   FREE = 'FREE',
   PRO = 'PRO',
   ENTERPRISE = 'ENTERPRISE',
@@ -11,38 +13,22 @@ export enum SubscriptionStatus {
 }
 
 export class Subscription {
-  private readonly id: string;
-  private readonly organizationId: string;
-  private readonly plan: PlanType;
-  private status: SubscriptionStatus;
-  private readonly currentPeriodStart: Date;
-  private currentPeriodEnd: Date;
-  private readonly createdAt: Date;
-
   private constructor(
-    id: string,
-    organizationId: string,
-    plan: PlanType,
-    status: SubscriptionStatus,
-    currentPeriodStart: Date,
-    currentPeriodEnd: Date,
-    createdAt: Date,
-  ) {
-    this.id = id;
-    this.organizationId = organizationId;
-    this.plan = plan;
-    this.status = status;
-    this.currentPeriodStart = currentPeriodStart;
-    this.currentPeriodEnd = currentPeriodEnd;
-    this.createdAt = createdAt;
-  }
+    private readonly id: string,
+    private readonly organizationId: string,
+    private plan: SubscriptionPlan,
+    private status: SubscriptionStatus,
+    private currentPeriodStart: Date,
+    private currentPeriodEnd: Date,
+    private readonly createdAt: Date,
+  ) {}
 
   static createFree(organizationId: string): Subscription {
     if (!organizationId || organizationId.trim() === '') {
       throw new Error('Organization ID is required');
     }
 
-    const id = this.generateId();
+    const id = randomUUID();
     const now = new Date();
     const endDate = new Date(now);
     endDate.setDate(endDate.getDate() + 30);
@@ -50,7 +36,7 @@ export class Subscription {
     return new Subscription(
       id,
       organizationId,
-      PlanType.FREE,
+      SubscriptionPlan.FREE,
       SubscriptionStatus.ACTIVE,
       now,
       endDate,
@@ -60,14 +46,14 @@ export class Subscription {
 
   static create(
     organizationId: string,
-    plan: PlanType,
+    plan: SubscriptionPlan,
     durationInDays: number,
   ): Subscription {
     if (!organizationId || organizationId.trim() === '') {
       throw new Error('Organization ID is required');
     }
 
-    if (!plan || !Object.values(PlanType).includes(plan)) {
+    if (!plan || !Object.values(SubscriptionPlan).includes(plan)) {
       throw new Error('Invalid plan type');
     }
 
@@ -75,7 +61,7 @@ export class Subscription {
       throw new Error('Duration in days must be greater than 0');
     }
 
-    const id = this.generateId();
+    const id = randomUUID();
     const now = new Date();
     const endDate = new Date(now);
     endDate.setDate(endDate.getDate() + durationInDays);
@@ -94,6 +80,26 @@ export class Subscription {
       now,
       endDate,
       now,
+    );
+  }
+
+  static restore(props: {
+    id: string;
+    organizationId: string;
+    plan: SubscriptionPlan;
+    status: SubscriptionStatus;
+    currentPeriodStart: Date;
+    currentPeriodEnd: Date;
+    createdAt: Date;
+  }): Subscription {
+    return new Subscription(
+      props.id,
+      props.organizationId,
+      props.plan,
+      props.status,
+      props.currentPeriodStart,
+      props.currentPeriodEnd,
+      props.createdAt,
     );
   }
 
@@ -114,15 +120,20 @@ export class Subscription {
   }
 
   isActive(): boolean {
-    return this.status === SubscriptionStatus.ACTIVE;
+    const now = new Date();
+    return (
+      this.status === SubscriptionStatus.ACTIVE &&
+      now >= this.currentPeriodStart &&
+      now <= this.currentPeriodEnd
+    );
   }
 
-  upgradeTo(plan: PlanType, durationInDays: number): Subscription {
+  upgradeTo(plan: SubscriptionPlan, durationInDays: number): void {
     if (this.status !== SubscriptionStatus.ACTIVE) {
       throw new Error('Can only upgrade active subscriptions');
     }
 
-    if (!plan || !Object.values(PlanType).includes(plan)) {
+    if (!plan || !Object.values(SubscriptionPlan).includes(plan)) {
       throw new Error('Invalid plan type');
     }
 
@@ -134,26 +145,14 @@ export class Subscription {
       throw new Error('Duration in days must be greater than 0');
     }
 
-    const id = Subscription.generateId();
     const now = new Date();
     const endDate = new Date(now);
     endDate.setDate(endDate.getDate() + durationInDays);
 
-    if (endDate.getTime() <= now.getTime()) {
-      throw new Error(
-        'Current period end must be greater than current period start',
-      );
-    }
-
-    return new Subscription(
-      id,
-      this.organizationId,
-      plan,
-      SubscriptionStatus.ACTIVE,
-      now,
-      endDate,
-      now,
-    );
+    this.plan = plan;
+    this.status = SubscriptionStatus.ACTIVE;
+    this.currentPeriodStart = now;
+    this.currentPeriodEnd = endDate;
   }
 
   getId(): string {
@@ -164,7 +163,7 @@ export class Subscription {
     return this.organizationId;
   }
 
-  getPlan(): PlanType {
+  getPlan(): SubscriptionPlan {
     return this.plan;
   }
 
@@ -184,7 +183,15 @@ export class Subscription {
     return new Date(this.createdAt);
   }
 
-  private static generateId(): string {
-    return `sub_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  toJSON() {
+    return {
+      id: this.id,
+      organizationId: this.organizationId,
+      plan: this.plan,
+      status: this.status,
+      currentPeriodStart: new Date(this.currentPeriodStart),
+      currentPeriodEnd: new Date(this.currentPeriodEnd),
+      createdAt: new Date(this.createdAt),
+    };
   }
 }
