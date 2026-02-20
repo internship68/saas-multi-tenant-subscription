@@ -28,11 +28,17 @@ interface SubscriptionDelegate {
     where: { organizationId: string };
     orderBy: { createdAt: 'desc' };
   }): Promise<PrismaSubscription | null>;
+
+  findMany(args: {
+    where: { status: string; currentPeriodEnd: { lt: Date } };
+  }): Promise<PrismaSubscription[]>;
 }
 
 type PrismaServiceWithSubscription = PrismaService & {
   subscription: SubscriptionDelegate;
 };
+
+// ─── Mappers (Infrastructure detail — hidden from Domain) ────────────────────
 
 function mapPrismaToDomain(model: PrismaSubscription): Subscription {
   return Subscription.restore({
@@ -59,9 +65,11 @@ function mapDomainToPrisma(entity: Subscription): PrismaSubscription {
   } as PrismaSubscription;
 }
 
+// ─── Repository Implementation ───────────────────────────────────────────────
+
 @Injectable()
 export class PrismaSubscriptionRepository implements SubscriptionRepository {
-  constructor(private readonly prisma: PrismaServiceWithSubscription) {}
+  constructor(private readonly prisma: PrismaServiceWithSubscription) { }
 
   async save(subscription: Subscription): Promise<void> {
     const data = mapDomainToPrisma(subscription);
@@ -86,5 +94,25 @@ export class PrismaSubscriptionRepository implements SubscriptionRepository {
     }
 
     return mapPrismaToDomain(model);
+  }
+
+  /**
+   * Infrastructure implementation of the domain contract.
+   * Returns all subscriptions that are still ACTIVE in the DB but whose
+   * currentPeriodEnd has already passed the current timestamp.
+   *
+   * Prisma query detail stays here — Domain remains unaware of it.
+   */
+  async findAllExpired(): Promise<Subscription[]> {
+    const now = new Date();
+
+    const models = await this.prisma.subscription.findMany({
+      where: {
+        status: SubscriptionStatus.ACTIVE,
+        currentPeriodEnd: { lt: now },
+      },
+    });
+
+    return models.map(mapPrismaToDomain);
   }
 }

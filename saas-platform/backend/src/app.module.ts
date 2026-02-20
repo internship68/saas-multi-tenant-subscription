@@ -9,6 +9,7 @@ import { PaymentModule } from './modules/payment/payment.module';
 import { UsageModule } from './modules/usage/usage.module';
 import { PrismaModule } from './shared/prisma/prisma.module';
 import { RedisModule } from './shared/redis/redis.module';
+import { SubscriptionJobsModule } from './jobs/subscription-jobs.module';
 
 @Module({
   imports: [
@@ -20,8 +21,9 @@ import { RedisModule } from './shared/redis/redis.module';
     UsageModule,
     PrismaModule,
     RedisModule,
+    SubscriptionJobsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
 })
-export class AppModule {}
+export class AppModule { }
