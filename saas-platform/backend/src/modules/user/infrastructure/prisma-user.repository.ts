@@ -62,4 +62,22 @@ export class PrismaUserRepository implements UserRepository {
             createdAt: model.createdAt,
         });
     }
+
+    async findByOrganizationId(organizationId: string): Promise<User[]> {
+        const models = await this.prisma.user.findMany({
+            where: { organizationId },
+        });
+
+        return models.map((model: any) =>
+            User.restore({
+                id: model.id,
+                email: model.email,
+                passwordHash: model.password,
+                name: model.name,
+                role: model.role as Role,
+                organizationId: model.organizationId,
+                createdAt: model.createdAt,
+            }),
+        );
+    }
 }

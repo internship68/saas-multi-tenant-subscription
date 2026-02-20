@@ -8,9 +8,14 @@ export class User {
         private passwordHash: string,
         private name: string,
         private role: Role,
-        private readonly organizationId: string,
+        private organizationId: string,
         private readonly createdAt: Date,
     ) { }
+
+    changeOrganization(newOrganizationId: string, newRole: Role): void {
+        this.organizationId = newOrganizationId;
+        this.role = newRole;
+    }
 
     static create(
         email: string,

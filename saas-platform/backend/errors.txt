@@ -1,0 +1,4 @@
+src/modules/organization/presentation/dto/organization.dto.ts(7,5): error TS2564: Property 'email' has no initializer and is not definitely assigned in the constructor.
+src/modules/organization/presentation/dto/organization.dto.ts(11,5): error TS2564: Property 'role' has no initializer and is not definitely assigned in the constructor.
+src/modules/organization/presentation/dto/organization.dto.ts(17,5): error TS2564: Property 'token' has no initializer and is not definitely assigned in the constructor.
+src/shared/prisma/prisma.service.ts(8,3): error TS2610: 'user' is defined as an accessor in class 'PrismaClient<PrismaClientOptions, never, DefaultArgs>', but is overridden here in 'PrismaService' as an instance property.
