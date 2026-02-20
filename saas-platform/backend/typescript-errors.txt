@@ -1,0 +1,1 @@
+src/shared/prisma/prisma.service.ts(9,3): error TS2610: 'user' is defined as an accessor in class 'PrismaClient<PrismaClientOptions, never, DefaultArgs>', but is overridden here in 'PrismaService' as an instance property.
