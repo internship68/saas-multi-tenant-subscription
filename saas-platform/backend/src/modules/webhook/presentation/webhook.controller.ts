@@ -36,7 +36,7 @@ import {
  * Important: This endpoint must NOT use the global JSON body parser.
  * Configure main.ts with rawBody: true to capture raw Buffer.
  */
-@Controller('webhooks')
+@Controller('webhook')
 export class WebhookController {
     private readonly logger = new Logger(WebhookController.name);
 

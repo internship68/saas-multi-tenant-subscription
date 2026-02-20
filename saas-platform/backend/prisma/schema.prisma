@@ -107,3 +107,9 @@ model Payment {
   @@index([organizationId])
   @@index([subscriptionId])
 }
+
+model ProcessedWebhookEvent {
+  id          String   @id // Use Stripe Event ID
+  type        String
+  processedAt DateTime @default(now())
+}

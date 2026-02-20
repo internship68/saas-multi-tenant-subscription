@@ -12,6 +12,8 @@ import {
     SubscriptionCanceledEventData,
 } from '../modules/webhook/infrastructure/stripe-event.types';
 
+import { PrismaService } from '../shared/prisma/prisma.service';
+
 /**
  * StripeWebhookProcessor — BullMQ processor for the stripe-webhook queue.
  *
@@ -19,6 +21,7 @@ import {
  *  - Receive jobs from the STRIPE_WEBHOOK queue.
  *  - Route to the correct Application UseCase based on job.name.
  *  - NO business logic here — only orchestration.
+ *  - IDEMPOTENCY: Ensure each event ID is processed exactly once in DB.
  *
  * Reliability guarantees (via BullMQ):
  *  - Jobs survive process crash (persisted in Redis).
@@ -35,16 +38,34 @@ export class StripeWebhookProcessor extends WorkerHost {
         private readonly handlePaymentSucceeded: HandlePaymentSucceededUseCase,
         private readonly handleSubscriptionCanceled: HandleSubscriptionCanceledUseCase,
         private readonly handleInvoiceFailed: HandleInvoiceFailedUseCase,
+        private readonly prisma: PrismaService,
     ) {
         super();
     }
 
     async process(job: Job<StripeWebhookJobPayload>): Promise<void> {
+        const { eventId, eventType } = job.data;
+
+        // ── 1. Idempotency Check ──────────────────────────────────────────────
+        // Check if we've already successfully processed this event ID.
+        // BullMQ's jobId deduplication handles recent duplicates, but DB record
+        // provides an absolute long-term guarantee.
+        const alreadyProcessed = await this.prisma.processedWebhookEvent.findUnique({
+            where: { id: eventId },
+        });
+
+        if (alreadyProcessed) {
+            this.logger.warn(
+                `Stripe event [${eventId}] already processed on ${alreadyProcessed.processedAt}. Skipping duplicate.`,
+            );
+            return;
+        }
+
         this.logger.log(
-            `Processing Stripe job [${job.name}] id=${job.id} ` +
-            `eventId=${job.data.eventId}`,
+            `Processing Stripe job [${job.name}] id=${job.id} eventId=${eventId}`,
         );
 
+        // ── 2. Route to UseCase ────────────────────────────────────────────────
         switch (job.name) {
             case JOB_NAMES.STRIPE_PAYMENT_SUCCEEDED:
                 await this.handlePaymentSucceeded.execute(
@@ -66,10 +87,18 @@ export class StripeWebhookProcessor extends WorkerHost {
 
             default:
                 this.logger.warn(
-                    `Unknown Stripe job name: "${job.name}" — skipping. ` +
-                    `Add handler to StripeWebhookProcessor if needed.`,
+                    `Unknown Stripe job name: "${job.name}" — skipping.`,
                 );
+                return;
         }
+
+        // ── 3. Record success for idempotency ──────────────────────────────────
+        await this.prisma.processedWebhookEvent.create({
+            data: {
+                id: eventId,
+                type: eventType,
+            },
+        });
 
         this.logger.log(
             `Stripe job [${job.name}] id=${job.id} completed successfully.`,
