@@ -59,3 +59,17 @@ model Invitation {
   @@index([organizationId])
   @@index([token])
 }
+
+model AuditLog {
+  id             String   @id @default(uuid())
+  organizationId String
+  action         String   // e.g., "SUBSCRIPTION_UPGRADED", "USER_JOINED"
+  entityType     String   // e.g., "Subscription", "User"
+  entityId       String
+  actorId        String?  // Who performed the action (userId)
+  metadata       Json?    // Store old/new values or extra info
+  createdAt      DateTime @default(now())
+
+  @@index([organizationId])
+  @@index([entityId])
+}

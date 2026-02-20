@@ -3,6 +3,8 @@ import { Organization } from '../domain/organization.entity';
 import { Subscription } from '../domain/subscription.entity';
 import { OrganizationRepository } from '../domain/organization.repository.interface';
 import { SubscriptionRepository } from '../domain/subscription.repository.interface';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import { SubscriptionChangedEvent } from '../domain/events/subscription-changed.event';
 
 export interface CreateOrganizationCommand {
   name: string;
@@ -20,7 +22,8 @@ export class CreateOrganizationUseCase {
     private readonly organizationRepository: OrganizationRepository,
     @Inject('SubscriptionRepository')
     private readonly subscriptionRepository: SubscriptionRepository,
-  ) {}
+    private readonly eventEmitter: EventEmitter2,
+  ) { }
 
   async execute(
     command: CreateOrganizationCommand,
@@ -30,6 +33,17 @@ export class CreateOrganizationUseCase {
 
     await this.organizationRepository.save(organization);
     await this.subscriptionRepository.save(subscription);
+
+    // Emit audit event
+    this.eventEmitter.emit(
+      'domain.subscription_changed',
+      new SubscriptionChangedEvent(
+        organization.getId(),
+        subscription.getId(),
+        'CREATED',
+        { plan: subscription.getPlan(), orgName: organization.getName() }
+      )
+    );
 
     return { organization, subscription };
   }

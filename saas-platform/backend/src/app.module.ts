@@ -12,12 +12,19 @@ import { RedisModule } from './shared/redis/redis.module';
 import { QueueInfrastructureModule } from './shared/queue/queue-infrastructure.module';
 import { SubscriptionJobsModule } from './jobs/subscription-jobs.module';
 import { WebhookModule } from './modules/webhook/webhook.module';
+import { EventEmitterModule } from '@nestjs/event-emitter';
+import { AuditModule } from './modules/audit/audit.module';
 
 @Module({
   imports: [
     // ── Shared Infrastructure (Global) ───────────────────────────────────
+    EventEmitterModule.forRoot({
+      wildcard: true,
+      delimiter: '.',
+    }),
     PrismaModule,           // Global Prisma client
     RedisModule,            // Global @upstash/redis REST client (for caching)
+    AuditModule,            // Global Audit system
     QueueInfrastructureModule, // Global BullMQ TCP connection (for background jobs)
 
     // ── Feature Modules ──────────────────────────────────────────────────

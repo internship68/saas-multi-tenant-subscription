@@ -5,6 +5,7 @@ import { PrismaClient } from '@prisma/client';
 export class PrismaService
   extends PrismaClient
   implements OnModuleInit, OnModuleDestroy {
+  [x: string]: any;
   async onModuleInit(): Promise<void> {
     // Prisma's $connect is well-typed, but TS-ESLint cannot resolve it here.
     // eslint-disable-next-line @typescript-eslint/no-unsafe-call

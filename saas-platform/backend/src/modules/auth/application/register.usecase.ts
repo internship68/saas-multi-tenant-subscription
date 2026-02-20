@@ -6,6 +6,8 @@ import { UserRepository } from '../../user/domain/user.repository.interface';
 import { User } from '../../user/domain/user.entity';
 import { Role } from '../../user/domain/role.enum';
 import { CreateOrganizationUseCase } from '../../subscription/application/create-organization.usecase';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import { UserMembershipChangedEvent } from '../../user/domain/events/user-membership-changed.event';
 
 /**
  * RegisterUseCase — orchestrates user registration.
@@ -27,6 +29,7 @@ export class RegisterUseCase {
         @Inject('TokenService')
         private readonly tokenService: TokenService,
         private readonly createOrganizationUseCase: CreateOrganizationUseCase,
+        private readonly eventEmitter: EventEmitter2,
     ) { }
 
     async execute(command: RegisterCommand): Promise<RegisterResult> {
@@ -53,6 +56,17 @@ export class RegisterUseCase {
         );
 
         await this.userRepository.save(user);
+
+        // Emit audit event
+        this.eventEmitter.emit(
+            'domain.user_membership_changed',
+            new UserMembershipChangedEvent(
+                organization.getId(),
+                user.getId(),
+                'JOINED',
+                { initialRegistration: true, role: user.getRole() }
+            )
+        );
 
         // Generate JWT token
         const token = this.tokenService.generateToken({
