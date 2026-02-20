@@ -7,39 +7,14 @@ import { ExpireAllDueSubscriptionsUseCase } from '../modules/subscription/applic
 import { PrismaSubscriptionRepository } from '../modules/subscription/infrastructure/prisma-subscription.repository';
 
 /**
- * SubscriptionJobsModule — wires BullMQ queue, processor, scheduler,
- * and the application-layer use case that the processor delegates to.
+ * SubscriptionJobsModule — wires the subscription expiration queue,
+ * processor, scheduler, and use case.
  *
- * Redis connection via Upstash TLS TCP endpoint (ioredis-compatible):
- *   REDIS_HOST      — Upstash hostname  (e.g. special-lioness-xxxxx.upstash.io)
- *   REDIS_PORT      — 6380 (Upstash TLS port)
- *   REDIS_PASSWORD  — Upstash REST token (used as ioredis password)
- *   REDIS_TLS       — "true" to enable TLS (required for Upstash)
- *
- * NOTE: Upstash enforces a max connection limit. BullMQ is configured with
- * maxRetriesPerRequest=null and enableReadyCheck=false as recommended by
- * the BullMQ + Upstash integration guide.
+ * BullMQ root connection is provided globally by QueueInfrastructureModule.
+ * This module only registers the queue it owns.
  */
 @Module({
     imports: [
-        BullModule.forRootAsync({
-            useFactory: () => {
-                const isTls = process.env.REDIS_TLS === 'true';
-
-                return {
-                    connection: {
-                        host: process.env.REDIS_HOST ?? 'localhost',
-                        port: parseInt(process.env.REDIS_PORT ?? '6379', 10),
-                        password: process.env.REDIS_PASSWORD,
-                        // TLS required for Upstash; harmless when disabled locally
-                        tls: isTls ? {} : undefined,
-                        // Required settings for BullMQ + Upstash compatibility
-                        maxRetriesPerRequest: null,
-                        enableReadyCheck: false,
-                    },
-                };
-            },
-        }),
         BullModule.registerQueue({
             name: QUEUE_NAMES.SUBSCRIPTION_EXPIRATION,
         }),
