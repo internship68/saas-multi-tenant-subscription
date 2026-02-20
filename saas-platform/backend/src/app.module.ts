@@ -11,7 +11,16 @@ import { PrismaModule } from './shared/prisma/prisma.module';
 import { RedisModule } from './shared/redis/redis.module';
 
 @Module({
-  imports: [AuthModule, OrganizationModule, UserModule, SubscriptionModule, PaymentModule, UsageModule, PrismaModule, RedisModule],
+  imports: [
+    AuthModule,
+    OrganizationModule,
+    UserModule,
+    SubscriptionModule,
+    PaymentModule,
+    UsageModule,
+    PrismaModule,
+    RedisModule,
+  ],
   controllers: [AppController],
   providers: [AppService],
 })
