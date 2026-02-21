@@ -6,9 +6,9 @@ import {
     ForbiddenException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { SubscriptionRepository } from '../../modules/subscription/domain/subscription.repository.interface';
-import { SubscriptionPlan } from '../../modules/subscription/domain/subscription.entity';
-import { PLAN_LIMITS } from '../../modules/usage/domain/plan-limits.constants';
+import { SubscriptionRepository } from '../../core/subscription/domain/subscription.repository.interface';
+import { SubscriptionPlan } from '../../core/subscription/domain/subscription.entity';
+import { PLAN_LIMITS } from '../../core/usage/domain/plan-limits.constants';
 
 @Injectable()
 export class FeatureGateGuard implements CanActivate {

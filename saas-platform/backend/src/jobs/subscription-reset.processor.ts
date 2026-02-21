@@ -2,7 +2,7 @@ import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
 import { QUEUE_NAMES, JOB_NAMES } from './queue.constants';
-import { ProcessPeriodicBillingUseCase } from '../modules/subscription/application/process-periodic-billing.usecase';
+import { ProcessPeriodicBillingUseCase } from '../core/subscription/application/process-periodic-billing.usecase';
 
 @Processor(QUEUE_NAMES.USAGE_RESET)
 export class SubscriptionResetProcessor extends WorkerHost {

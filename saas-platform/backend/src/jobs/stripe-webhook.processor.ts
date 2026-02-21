@@ -2,17 +2,17 @@ import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
 import { JOB_NAMES, QUEUE_NAMES } from './queue.constants';
-import { HandlePaymentSucceededUseCase } from '../modules/webhook/application/handle-payment-succeeded.usecase';
-import { HandleSubscriptionCanceledUseCase } from '../modules/webhook/application/handle-subscription-canceled.usecase';
-import { HandleInvoiceFailedUseCase } from '../modules/webhook/application/handle-invoice-failed.usecase';
-import { HandleCheckoutSessionCompletedUseCase } from '../modules/webhook/application/handle-checkout-completed.usecase';
+import { HandlePaymentSucceededUseCase } from '../core/webhook/application/handle-payment-succeeded.usecase';
+import { HandleSubscriptionCanceledUseCase } from '../core/webhook/application/handle-subscription-canceled.usecase';
+import { HandleInvoiceFailedUseCase } from '../core/webhook/application/handle-invoice-failed.usecase';
+import { HandleCheckoutSessionCompletedUseCase } from '../core/webhook/application/handle-checkout-completed.usecase';
 import {
     InvoiceFailedEventData,
     PaymentSucceededEventData,
     StripeWebhookJobPayload,
     SubscriptionCanceledEventData,
     CheckoutSessionCompletedEventData,
-} from '../modules/webhook/infrastructure/stripe-event.types';
+} from '../core/webhook/infrastructure/stripe-event.types';
 import { PrismaService } from '../shared/prisma/prisma.service';
 
 /**

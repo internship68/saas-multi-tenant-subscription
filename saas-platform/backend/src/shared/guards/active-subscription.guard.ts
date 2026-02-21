@@ -5,7 +5,7 @@ import {
   Injectable,
 } from '@nestjs/common';
 import { Request } from 'express';
-import { GetSubscriptionStatusUseCase } from '../../modules/subscription/application/get-subscription-status.usecase';
+import { GetSubscriptionStatusUseCase } from '../../core/subscription/application/get-subscription-status.usecase';
 
 @Injectable()
 export class ActiveSubscriptionGuard implements CanActivate {

@@ -11,11 +11,14 @@ model Organization {
   id            String              @id @default(uuid())
   name          String
   createdAt     DateTime            @default(now())
-  subscriptions Subscription[]
-  users         User[]
-  invitations   Invitation[]
-  usages        OrganizationUsage[]
-  payments      Payment[]
+  subscriptions      Subscription[]
+  users              User[]
+  invitations        Invitation[]
+  usages             OrganizationUsage[]
+  payments           Payment[]
+  lineIntegrations   LineIntegration[]
+  lineLeads          LineLead[]
+  lineConversations  LineConversation[]
 }
 
 model User {
@@ -144,4 +147,48 @@ model IdempotencyRecord {
 
   @@unique([id, userId])
   @@index([expiresAt])
+}
+
+// ─── Products Layer: Line Enrollment ──────────────────────────────────────────
+
+model LineIntegration {
+  id                 String   @id @default(uuid())
+  organizationId     String
+  channelId          String
+  channelSecret      String
+  channelAccessToken String?
+  webhookUrl         String?
+  createdAt          DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  @@index([organizationId])
+}
+
+model LineLead {
+  id             String   @id @default(uuid())
+  organizationId String
+  lineUserId     String
+  studentName    String?
+  grade          String?
+  phone          String?
+  courseInterest String?
+  status         String   @default("NEW") // NEW, CONTACTED, ENROLLED
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  @@index([organizationId])
+  @@index([lineUserId])
+}
+
+model LineConversation {
+  id             String   @id @default(uuid())
+  organizationId String
+  lineUserId     String
+  state          String   @default("INITIAL") // INITIAL, ASKING_INFO, READY_TO_ENROLL
+  lastIntent     String?
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  @@unique([organizationId, lineUserId])
+  @@index([organizationId])
 }

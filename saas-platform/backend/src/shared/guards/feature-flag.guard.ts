@@ -8,7 +8,7 @@ import { Reflector } from '@nestjs/core';
 import { Request } from 'express';
 import { REQUIRE_FEATURE_KEY } from '../decorators/plan.decorator';
 import { PLAN_LIMITS, PlanFeature } from '../constants/plan-limits.constant';
-import { GetSubscriptionStatusUseCase } from '../../modules/subscription/application/get-subscription-status.usecase';
+import { GetSubscriptionStatusUseCase } from '../../core/subscription/application/get-subscription-status.usecase';
 
 /**
  * FeatureFlagGuard — Presentation layer guard.

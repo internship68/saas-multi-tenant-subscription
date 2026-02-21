@@ -2,7 +2,7 @@ import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
 import { QUEUE_NAMES, JOB_NAMES } from './queue.constants';
-import { ExpireAllDueSubscriptionsUseCase } from '../modules/subscription/application/expire-all-due-subscriptions.usecase';
+import { ExpireAllDueSubscriptionsUseCase } from '../core/subscription/application/expire-all-due-subscriptions.usecase';
 
 /**
  * BullMQ Processor — Infrastructure concern only.

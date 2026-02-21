@@ -1,6 +1,6 @@
 import { SetMetadata } from '@nestjs/common';
 import { PlanFeature } from '../constants/plan-limits.constant';
-import { SubscriptionPlan } from '../../modules/subscription/domain/subscription.entity';
+import { SubscriptionPlan } from '../../core/subscription/domain/subscription.entity';
 
 export const REQUIRE_PLAN_KEY = 'requirePlan';
 export const RequirePlan = (plan: SubscriptionPlan) =>

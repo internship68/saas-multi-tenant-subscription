@@ -6,6 +6,18 @@ export enum SubscriptionPlan {
   ENTERPRISE = 'ENTERPRISE',
 }
 
+export enum Feature {
+  LINE_ENROLLMENT = 'LINE_ENROLLMENT',
+  CRM_LITE = 'CRM_LITE',
+  AI_SALES = 'AI_SALES',
+}
+
+export const PLAN_FEATURES: Record<SubscriptionPlan, Feature[]> = {
+  [SubscriptionPlan.FREE]: [],
+  [SubscriptionPlan.PRO]: [Feature.LINE_ENROLLMENT, Feature.CRM_LITE],
+  [SubscriptionPlan.ENTERPRISE]: [Feature.LINE_ENROLLMENT, Feature.CRM_LITE, Feature.AI_SALES],
+};
+
 export enum SubscriptionStatus {
   ACTIVE = 'ACTIVE',
   CANCELED = 'CANCELED',

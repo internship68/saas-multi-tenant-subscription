@@ -6,8 +6,8 @@ import {
     ForbiddenException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { SubscriptionRepository } from '../../modules/subscription/domain/subscription.repository.interface';
-import { UsageRepository } from '../../modules/usage/domain/usage.repository.interface';
+import { SubscriptionRepository } from '../../core/subscription/domain/subscription.repository.interface';
+import { UsageRepository } from '../../core/usage/domain/usage.repository.interface';
 
 @Injectable()
 export class PlanLimitGuard implements CanActivate {
