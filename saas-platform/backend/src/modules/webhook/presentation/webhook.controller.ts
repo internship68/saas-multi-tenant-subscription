@@ -115,6 +115,9 @@ export class WebhookController {
             case STRIPE_EVENT_TYPES.INVOICE_PAYMENT_FAILED:
                 parsedData = this.stripeService.parseInvoiceFailed(event.data.object);
                 break;
+            case STRIPE_EVENT_TYPES.CHECKOUT_SESSION_COMPLETED:
+                parsedData = this.stripeService.parseCheckoutSessionCompleted(event.data.object);
+                break;
             default:
                 return { received: true };
         }

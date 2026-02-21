@@ -27,6 +27,7 @@ export const STRIPE_EVENT_TYPES = {
     PAYMENT_INTENT_SUCCEEDED: 'payment_intent.succeeded',
     CUSTOMER_SUBSCRIPTION_DELETED: 'customer.subscription.deleted',
     INVOICE_PAYMENT_FAILED: 'invoice.payment_failed',
+    CHECKOUT_SESSION_COMPLETED: 'checkout.session.completed',
 } as const;
 
 // ─── Parsed Command Data (what Handlers receive — no raw Stripe objects) ────
@@ -59,6 +60,14 @@ export interface SubscriptionCanceledEventData {
     stripeCustomerId: string;
 }
 
+export interface CheckoutSessionCompletedEventData {
+    organizationId: string;
+    userId: string;
+    stripeSubscriptionId: string;
+    stripeCustomerId: string;
+    stripePaymentIntentId?: string; // Sometimes populated in checkout
+}
+
 export interface InvoiceFailedEventData {
     organizationId: string;
     stripeInvoiceId: string;
@@ -85,5 +94,6 @@ export interface StripeWebhookJobPayload {
     data:
     | PaymentSucceededEventData
     | SubscriptionCanceledEventData
-    | InvoiceFailedEventData;
+    | InvoiceFailedEventData
+    | CheckoutSessionCompletedEventData;
 }

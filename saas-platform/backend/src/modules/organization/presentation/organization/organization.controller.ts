@@ -4,6 +4,7 @@ import { InviteUserUseCase } from '../../application/invite-user.usecase';
 import { JoinOrganizationUseCase } from '../../application/join-organization.usecase';
 import { ListMembersUseCase } from '../../application/list-members.usecase';
 import { InviteMemberDto, JoinOrganizationDto } from '../dto/organization.dto';
+import { ActiveSubscriptionGuard } from '../../../auth/guards/active-subscription.guard';
 
 @Controller('organizations')
 @UseGuards(JwtAuthGuard)
@@ -38,6 +39,7 @@ export class OrganizationController {
     }
 
     @Get('members')
+    @UseGuards(ActiveSubscriptionGuard)
     async listMembers(@Request() req: any) {
         const organizationId = req.user.organizationId;
         if (!organizationId) {

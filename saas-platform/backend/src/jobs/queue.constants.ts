@@ -19,4 +19,5 @@ export const JOB_NAMES = {
     STRIPE_PAYMENT_SUCCEEDED: 'stripe.payment_succeeded',
     STRIPE_SUBSCRIPTION_CANCELED: 'stripe.subscription_canceled',
     STRIPE_INVOICE_FAILED: 'stripe.invoice_failed',
+    STRIPE_CHECKOUT_COMPLETED: 'stripe.checkout_completed',
 } as const;

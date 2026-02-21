@@ -6,6 +6,7 @@ import {
     STRIPE_EVENT_TYPES,
     StripeWebhookEvent,
     SubscriptionCanceledEventData,
+    CheckoutSessionCompletedEventData,
 } from './stripe-event.types';
 import { JOB_NAMES } from '../../../jobs/queue.constants';
 import { SubscriptionPlan } from '../../subscription/domain/subscription.entity';
@@ -90,6 +91,8 @@ export class StripeService {
                 JOB_NAMES.STRIPE_SUBSCRIPTION_CANCELED,
             [STRIPE_EVENT_TYPES.INVOICE_PAYMENT_FAILED]:
                 JOB_NAMES.STRIPE_INVOICE_FAILED,
+            [STRIPE_EVENT_TYPES.CHECKOUT_SESSION_COMPLETED]:
+                JOB_NAMES.STRIPE_CHECKOUT_COMPLETED,
         };
 
         return mapping[eventType] ?? null;
@@ -149,6 +152,23 @@ export class StripeService {
             amountDue: (eventObject['amount_due'] as number) ?? 0,
             currency: (eventObject['currency'] as string) ?? 'usd',
             attemptCount: parseInt(metadata['attemptCount'] ?? '0', 10) || (eventObject['attempt_count'] as number) || 1,
+        };
+    }
+
+    /**
+     * Parses a checkout.session.completed event into our internal type.
+     */
+    parseCheckoutSessionCompleted(
+        eventObject: Record<string, unknown>,
+    ): CheckoutSessionCompletedEventData {
+        const metadata = (eventObject['metadata'] as Record<string, string>) ?? {};
+
+        return {
+            organizationId: metadata['organizationId'] || 'org-test-webhook',
+            userId: metadata['userId'] || 'user-test-webhook',
+            stripeSubscriptionId: (eventObject['subscription'] as string) ?? '',
+            stripeCustomerId: (eventObject['customer'] as string) ?? '',
+            stripePaymentIntentId: (eventObject['payment_intent'] as string) ?? undefined,
         };
     }
 }

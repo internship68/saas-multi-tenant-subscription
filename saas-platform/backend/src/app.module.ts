@@ -15,6 +15,7 @@ import { WebhookModule } from './modules/webhook/webhook.module';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { AuditModule } from './modules/audit/audit.module';
 import { HealthModule } from './modules/health/health.module';
+import { BillingModule } from './modules/billing/billing.module';
 import { LoggerModule } from 'nestjs-pino';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { IdempotencyInterceptor } from './shared/interceptors/idempotency.interceptor';
@@ -71,6 +72,7 @@ export class AppModule {
       PaymentModule,
       UsageModule,
       HealthModule,
+      BillingModule,
     ];
 
     const workerModules = [

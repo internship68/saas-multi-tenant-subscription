@@ -5,11 +5,13 @@ import { JOB_NAMES, QUEUE_NAMES } from './queue.constants';
 import { HandlePaymentSucceededUseCase } from '../modules/webhook/application/handle-payment-succeeded.usecase';
 import { HandleSubscriptionCanceledUseCase } from '../modules/webhook/application/handle-subscription-canceled.usecase';
 import { HandleInvoiceFailedUseCase } from '../modules/webhook/application/handle-invoice-failed.usecase';
+import { HandleCheckoutSessionCompletedUseCase } from '../modules/webhook/application/handle-checkout-completed.usecase';
 import {
     InvoiceFailedEventData,
     PaymentSucceededEventData,
     StripeWebhookJobPayload,
     SubscriptionCanceledEventData,
+    CheckoutSessionCompletedEventData,
 } from '../modules/webhook/infrastructure/stripe-event.types';
 import { PrismaService } from '../shared/prisma/prisma.service';
 
@@ -37,6 +39,7 @@ export class StripeWebhookProcessor extends WorkerHost implements OnApplicationS
         private readonly handlePaymentSucceeded: HandlePaymentSucceededUseCase,
         private readonly handleSubscriptionCanceled: HandleSubscriptionCanceledUseCase,
         private readonly handleInvoiceFailed: HandleInvoiceFailedUseCase,
+        private readonly handleCheckoutSessionCompleted: HandleCheckoutSessionCompletedUseCase,
         private readonly prisma: PrismaService,
     ) {
         super();
@@ -95,6 +98,12 @@ export class StripeWebhookProcessor extends WorkerHost implements OnApplicationS
                 case JOB_NAMES.STRIPE_INVOICE_FAILED:
                     await this.handleInvoiceFailed.execute(
                         job.data.data as InvoiceFailedEventData,
+                    );
+                    break;
+
+                case JOB_NAMES.STRIPE_CHECKOUT_COMPLETED:
+                    await this.handleCheckoutSessionCompleted.execute(
+                        job.data.data as CheckoutSessionCompletedEventData,
                     );
                     break;
 
