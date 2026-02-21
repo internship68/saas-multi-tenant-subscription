@@ -8,9 +8,9 @@ datasource db {
 }
 
 model Organization {
-  id            String         @id @default(uuid())
+  id            String              @id @default(uuid())
   name          String
-  createdAt     DateTime       @default(now())
+  createdAt     DateTime            @default(now())
   subscriptions Subscription[]
   users         User[]
   invitations   Invitation[]
@@ -34,13 +34,13 @@ model User {
 }
 
 model Subscription {
-  id                 String   @id
+  id                 String    @id
   organizationId     String
   plan               String
   status             String
   currentPeriodStart DateTime
   currentPeriodEnd   DateTime
-  createdAt          DateTime @default(now())
+  createdAt          DateTime  @default(now())
 
   organization Organization @relation(fields: [organizationId], references: [id])
   payments     Payment[]
@@ -67,27 +67,27 @@ model Invitation {
 }
 
 model AuditLog {
-  id             String   @id @default(uuid())
+  id             String    @id @default(uuid())
   organizationId String
-  action         String   // e.g., "SUBSCRIPTION_UPGRADED", "USER_JOINED"
-  entityType     String   // e.g., "Subscription", "User"
+  action         String    // e.g., "SUBSCRIPTION_UPGRADED", "USER_JOINED"
+  entityType     String    // e.g., "Subscription", "User"
   entityId       String
-  actorId        String?  // Who performed the action (userId)
-  metadata       Json?    // Store old/new values or extra info
-  createdAt      DateTime @default(now())
+  actorId        String?   // Who performed the action (userId)
+  metadata       Json?     // Store old/new values or extra info
+  createdAt      DateTime  @default(now())
 
   @@index([organizationId])
   @@index([entityId])
 }
 
 model OrganizationUsage {
-  id             String   @id @default(uuid())
+  id             String    @id @default(uuid())
   organizationId String
-  type           String   // e.g., "API_CALLS"
-  currentValue   Int      @default(0)
+  type           String    // e.g., "API_CALLS"
+  currentValue   Int       @default(0)
   limit          Int
   resetAt        DateTime
-  updatedAt      DateTime @updatedAt
+  updatedAt      DateTime  @updatedAt
 
   organization   Organization @relation(fields: [organizationId], references: [id])
 
@@ -96,13 +96,14 @@ model OrganizationUsage {
 }
 
 model Payment {
-  id             String   @id @default(uuid())
+  id             String    @id @default(uuid())
   organizationId String
   subscriptionId String
   amount         Float
-  currency       String   @default("USD")
-  status         String   // e.g., "SUCCEEDED", "FAILED", "PENDING"
-  createdAt      DateTime @default(now())
+  currency       String    @default("USD")
+  status         String    // SUCCEEDED | FAILED | PENDING
+  providerPaymentId String? @unique // To prevent double payments
+  createdAt      DateTime  @default(now())
 
   organization   Organization @relation(fields: [organizationId], references: [id])
   subscription   Subscription @relation(fields: [subscriptionId], references: [id])
@@ -112,21 +113,34 @@ model Payment {
   @@index([status])
 }
 
-model ProcessedWebhookEvent {
-  id          String   @id // Use Stripe Event ID
-  type        String
-  processedAt DateTime @default(now())
+// ─── Webhook Idempotency & DLQ ────────────────────────────────────────────────
+// status: PENDING → inserted when event received by controller (pre-queue)
+//         PROCESSED → updated by worker after successful processing
+//         IGNORED → business rule violation (e.g. InvalidTransitionError), not retried
+//         FAILED → updated by worker after all retries exhausted (Dead Letter)
+model WebhookEvent {
+  id              String    @id            // Stripe event ID (evt_xxx)
+  type            String                   // e.g. "payment_intent.succeeded"
+  status          String    @default("PENDING") // PENDING | PROCESSED | FAILED | IGNORED
+  payload         Json?                    // Store parsed job payload for Replay
+  receivedAt      DateTime  @default(now())
+  processedAt     DateTime?
+  errorMessage    String?
+  failedAt        DateTime?                // When it became a Dead Letter
+
+  @@index([status])
+  @@index([receivedAt])
 }
 
 model IdempotencyRecord {
-  id             String   @id // Idempotency-Key
-  userId         String
-  requestPath    String
+  id              String    @id            // Idempotency-Key
+  userId          String
+  requestPath     String
   requestBodyHash String
-  responseStatus Int
-  responseBody   Json
-  createdAt      DateTime @default(now())
-  expiresAt      DateTime
+  responseStatus  Int
+  responseBody    Json
+  createdAt       DateTime  @default(now())
+  expiresAt       DateTime
 
   @@unique([id, userId])
   @@index([expiresAt])

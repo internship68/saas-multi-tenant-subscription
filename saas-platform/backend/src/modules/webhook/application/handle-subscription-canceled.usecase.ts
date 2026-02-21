@@ -5,7 +5,10 @@ import {
     Logger,
     NotFoundException,
 } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { SubscriptionRepository } from '../../subscription/domain/subscription.repository.interface';
+import { SubscriptionChangedEvent } from '../../subscription/domain/events/subscription-changed.event';
+import { PrismaService } from '../../../shared/prisma/prisma.service';
 
 export interface HandleSubscriptionCanceledCommand {
     organizationId: string;
@@ -16,15 +19,8 @@ export interface HandleSubscriptionCanceledCommand {
 /**
  * Application Use Case — handles customer.subscription.deleted from Stripe.
  *
- * Business logic:
- *  - Find the organization's active subscription
- *  - Call domain entity cancel() method
- *  - Persist
- *
- * Layer contract:
- *  - No Stripe SDK or Stripe types.
- *  - Calls only Domain entity methods.
- *  - If subscription not found, throws so BullMQ can retry.
+ * Transactional guarantee:
+ *  subscription update written atomically via Prisma $transaction.
  */
 @Injectable()
 export class HandleSubscriptionCanceledUseCase {
@@ -33,6 +29,8 @@ export class HandleSubscriptionCanceledUseCase {
     constructor(
         @Inject('SubscriptionRepository')
         private readonly repository: SubscriptionRepository,
+        private readonly prisma: PrismaService,
+        private readonly eventEmitter: EventEmitter2,
     ) { }
 
     async execute(command: HandleSubscriptionCanceledCommand): Promise<void> {
@@ -52,13 +50,41 @@ export class HandleSubscriptionCanceledUseCase {
             );
         }
 
-        // Business rule lives in the entity — cancel() throws if already canceled
-        subscription.cancel();
-        await this.repository.save(subscription);
+        const oldPlan = subscription.getPlan();
+        const subId = subscription.getId();
 
-        this.logger.log(
-            `[SubscriptionCanceled] Org ${command.organizationId} subscription canceled. ` +
-            `(Stripe sub: ${command.stripeSubscriptionId}, customer: ${command.stripeCustomerId})`,
+        // State machine validates: ACTIVE → CANCELED (throws InvalidTransitionError otherwise)
+        subscription.cancel();
+
+        const subData = subscription.toJSON();
+
+        await this.prisma.$transaction(async (tx) => {
+            await tx.subscription.update({
+                where: { id: subId },
+                data: { status: subData.status },
+            });
+        }, { isolationLevel: 'Serializable' });
+
+        this.eventEmitter.emit(
+            'domain.subscription.changed',
+            new SubscriptionChangedEvent(
+                command.organizationId,
+                subId,
+                'CANCELED',
+                {
+                    plan: oldPlan,
+                    stripe_subscription_id: command.stripeSubscriptionId,
+                    stripe_customer_id: command.stripeCustomerId,
+                },
+            ),
         );
+
+        this.logger.log({
+            msg: 'Subscription canceled',
+            organization_id: command.organizationId,
+            subscription_id: subId,
+            plan: oldPlan,
+            stripe_subscription_id: command.stripeSubscriptionId,
+        });
     }
 }

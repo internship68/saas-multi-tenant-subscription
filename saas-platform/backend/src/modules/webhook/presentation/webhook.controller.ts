@@ -4,6 +4,8 @@ import {
     Headers,
     Logger,
     Post,
+    Get,
+    Param,
     RawBodyRequest,
     Req,
     UnauthorizedException,
@@ -17,24 +19,20 @@ import {
     STRIPE_EVENT_TYPES,
     StripeWebhookJobPayload,
 } from '../infrastructure/stripe-event.types';
+import { PrismaService } from '../../../shared/prisma/prisma.service';
 
 /**
  * WebhookController — Presentation layer.
  *
- * Responsibilities:
- *  1. Receive POST /webhooks/stripe
- *  2. Extract raw body (required for Stripe HMAC signature validation)
- *  3. Delegate signature validation to StripeService (Infrastructure)
- *  4. Push validated event to BullMQ queue immediately
- *  5. Return HTTP 200 to Stripe quickly (Stripe retries if we don't)
+ * Idempotency contract (3-step):
+ *  1. Verify Stripe HMAC signature
+ *  2. Check WebhookEvent table — reject duplicates BEFORE queue push
+ *  3. Insert WebhookEvent (status=PENDING) THEN push to BullMQ
  *
- * Layer contract:
- *  - NO business logic here.
- *  - Controller does NOT call UseCases directly — events go through queue.
- *  - This ensures: durability, retry, idempotency via BullMQ.
+ * Worker is responsible for updating status to PROCESSED | FAILED.
  *
- * Important: This endpoint must NOT use the global JSON body parser.
- * Configure main.ts with rawBody: true to capture raw Buffer.
+ * This guarantees: even if server restarts between step 3 and queue push,
+ * a duplicate event will be blocked at step 2 on retry.
  */
 @Controller('webhook')
 export class WebhookController {
@@ -42,6 +40,7 @@ export class WebhookController {
 
     constructor(
         private readonly stripeService: StripeService,
+        private readonly prisma: PrismaService,
         @InjectQueue(QUEUE_NAMES.STRIPE_WEBHOOK)
         private readonly stripeWebhookQueue: Queue,
     ) { }
@@ -51,9 +50,9 @@ export class WebhookController {
         @Req() req: RawBodyRequest<Request>,
         @Headers('stripe-signature') signature: string,
     ): Promise<{ received: boolean }> {
-        // ── 1. Extract raw body ───────────────────────────────────────────────
-        const rawBody = req.rawBody;
 
+        // ── 1. Extract raw body ─────────────────────────────────────────────
+        const rawBody = req.rawBody;
         if (!rawBody || rawBody.length === 0) {
             this.logger.error(
                 'Raw body is empty. Ensure NestFactory.create() is called with { rawBody: true }',
@@ -61,79 +60,138 @@ export class WebhookController {
             throw new BadRequestException('Empty request body');
         }
 
-        // ── 2. Validate Stripe signature + parse event ────────────────────────
+        // ── 2. Validate Stripe signature + parse event ──────────────────────
         let event;
         try {
             event = this.stripeService.validateAndParseEvent(rawBody, signature);
         } catch (error: unknown) {
-            if (error instanceof UnauthorizedException) {
-                throw error;
-            }
-            const reason =
-                error instanceof Error ? error.message : 'Signature validation failed';
+            if (error instanceof UnauthorizedException) throw error;
+            const reason = error instanceof Error ? error.message : 'Signature validation failed';
             this.logger.warn(`Stripe webhook rejected: ${reason}`);
             throw new UnauthorizedException(reason);
         }
 
-        // ── 3. Resolve job name for this event type ───────────────────────────
-        const jobName = this.stripeService.resolveJobName(event.type);
+        // ── 3. Idempotency guard — check BEFORE queue push ──────────────────
+        const existing = await this.prisma.webhookEvent.findUnique({
+            where: { id: event.id },
+        });
 
-        if (!jobName) {
-            // Log unhandled event types but still return 200 to Stripe
-            this.logger.log(
-                `Stripe event type "${event.type}" is not handled — acknowledging without processing.`,
-            );
+        if (existing) {
+            this.logger.warn({
+                msg: 'Duplicate Stripe event received — skipping',
+                stripe_event_id: event.id,
+                existing_status: existing.status,
+                received_at: existing.receivedAt,
+            });
+            // Return 200 to Stripe so it doesn't retry
             return { received: true };
         }
 
-        // ── 4. Parse event data into our internal type ────────────────────────
+        // ── 4. Resolve job name ─────────────────────────────────────────────
+        const jobName = this.stripeService.resolveJobName(event.type);
+
+        if (!jobName) {
+            this.logger.log({
+                msg: 'Unhandled Stripe event type — acknowledging',
+                stripe_event_id: event.id,
+                event_type: event.type,
+            });
+            // Still record it so we have an audit trail
+            await this.prisma.webhookEvent.create({
+                data: { id: event.id, type: event.type, status: 'UNHANDLED' },
+            });
+            return { received: true };
+        }
+
+        // ── 5. Parse event data ─────────────────────────────────────────────
         let parsedData;
         switch (event.type) {
             case STRIPE_EVENT_TYPES.PAYMENT_INTENT_SUCCEEDED:
-                parsedData = this.stripeService.parsePaymentSucceeded(
-                    event.data.object,
-                );
+                parsedData = this.stripeService.parsePaymentSucceeded(event.data.object);
                 break;
-
             case STRIPE_EVENT_TYPES.CUSTOMER_SUBSCRIPTION_DELETED:
-                parsedData = this.stripeService.parseSubscriptionCanceled(
-                    event.data.object,
-                );
+                parsedData = this.stripeService.parseSubscriptionCanceled(event.data.object);
                 break;
-
             case STRIPE_EVENT_TYPES.INVOICE_PAYMENT_FAILED:
                 parsedData = this.stripeService.parseInvoiceFailed(event.data.object);
                 break;
-
             default:
                 return { received: true };
         }
 
-        // ── 5. Enqueue to BullMQ (return 200 immediately after this) ─────────
+        // ── 6. Insert WebhookEvent (PENDING) then push to queue ─────────────
+        // Do these atomically: if queue push fails, we still have the DB record
+        // and Stripe will retry — the duplicate check (step 3) will catch it.
         const jobPayload: StripeWebhookJobPayload = {
             eventId: event.id,
             eventType: event.type,
             data: parsedData,
         };
 
-        await this.stripeWebhookQueue.add(jobName, jobPayload, {
-            // Use Stripe event ID as job ID for idempotency
-            // BullMQ will reject duplicate job IDs if the same event arrives twice
-            jobId: event.id,
-            attempts: 5,
-            backoff: {
-                type: 'exponential',
-                delay: 5000, // Start at 5s, then 10s, 20s, 40s, 80s
+        await this.prisma.webhookEvent.create({
+            data: {
+                id: event.id,
+                type: event.type,
+                status: 'PENDING',
+                payload: jobPayload as unknown as any,
             },
+        });
+
+        await this.stripeWebhookQueue.add(jobName, jobPayload, {
+            jobId: event.id,     // BullMQ-level dedup (secondary safety net)
+            attempts: 5,
+            backoff: { type: 'exponential', delay: 5000 },
             removeOnComplete: { count: 100 },
             removeOnFail: { count: 50 },
         });
 
-        this.logger.log(
-            `Stripe event "${event.type}" (id: ${event.id}) enqueued as job "${jobName}"`,
-        );
+        this.logger.log({
+            msg: 'Stripe event enqueued',
+            stripe_event_id: event.id,
+            event_type: event.type,
+            job_name: jobName,
+        });
 
-        // ── 6. Return 200 to Stripe immediately ──────────────────────────────
         return { received: true };
+    }
+
+    @Get('stripe/dlq')
+    async getDeadLetterQueue() {
+        return this.prisma.webhookEvent.findMany({
+            where: { status: 'FAILED' },
+            orderBy: { failedAt: 'desc' },
+        });
+    }
+
+    @Post('stripe/replay/:id')
+    async replayFailedEvent(@Param('id') eventId: string) {
+        const event = await this.prisma.webhookEvent.findUnique({
+            where: { id: eventId },
+        });
+
+        if (!event) throw new BadRequestException('Event not found');
+        if (event.status !== 'FAILED') throw new BadRequestException('Can only replay FAILED events');
+        if (!event.payload) throw new BadRequestException('Event missing payload, cannot replay');
+
+        const jobName = this.stripeService.resolveJobName(event.type);
+        if (!jobName) throw new BadRequestException('No handler for this event type');
+
+        // Update status to PENDING
+        await this.prisma.webhookEvent.update({
+            where: { id: eventId },
+            data: { status: 'PENDING', errorMessage: null, failedAt: null },
+        });
+
+        // Push to queue again
+        await this.stripeWebhookQueue.add(jobName, event.payload as unknown as StripeWebhookJobPayload, {
+            jobId: event.id + '_replay_' + Date.now(),
+            attempts: 5,
+            backoff: { type: 'exponential', delay: 5000 },
+            removeOnComplete: { count: 100 },
+            removeOnFail: { count: 50 },
+        });
+
+        this.logger.log(`Replayed event ${eventId}`);
+        return { success: true, replayedEventId: eventId };
     }
 }

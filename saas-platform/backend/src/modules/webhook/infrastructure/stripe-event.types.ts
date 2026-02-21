@@ -38,7 +38,9 @@ export const STRIPE_EVENT_TYPES = {
 export interface PaymentSucceededEventData {
     /** Our internal organization ID (from Stripe metadata) */
     organizationId: string;
-    /** Stripe payment intent or subscription ID */
+    /** Stripe payment intent ID — used as providerPaymentId for unique constraint */
+    stripePaymentIntentId: string;
+    /** Stripe subscription ID */
     stripeSubscriptionId: string;
     /** Stripe customer ID */
     stripeCustomerId: string;

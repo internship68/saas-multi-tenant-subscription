@@ -1,5 +1,6 @@
 import { BullModule } from '@nestjs/bullmq';
 import { Module } from '@nestjs/common';
+import { ScheduleModule } from '@nestjs/schedule';
 import { QUEUE_NAMES } from './queue.constants';
 import { SubscriptionExpirationProcessor } from './subscription-expiration.processor';
 import { SubscriptionExpirationScheduler } from './subscription-expiration.scheduler';
@@ -10,6 +11,7 @@ import { SubscriptionResetScheduler } from './subscription-reset.scheduler';
 import { ProcessPeriodicBillingUseCase } from '../modules/subscription/application/process-periodic-billing.usecase';
 import { PrismaUsageRepository } from '../modules/usage/infrastructure/prisma-usage.repository';
 import { PrismaService } from '../shared/prisma/prisma.service';
+import { WebhookRetentionJob } from './webhook-retention.job';
 
 import { UsageModule } from '../modules/usage/usage.module';
 
@@ -19,6 +21,7 @@ import { UsageModule } from '../modules/usage/usage.module';
             { name: QUEUE_NAMES.BILLING_EXPIRATION },
             { name: QUEUE_NAMES.USAGE_RESET }
         ),
+        ScheduleModule.forRoot(),
         UsageModule,
     ],
     providers: [
@@ -35,6 +38,8 @@ import { UsageModule } from '../modules/usage/usage.module';
         SubscriptionExpirationScheduler,
         SubscriptionResetProcessor,
         SubscriptionResetScheduler,
+        // Retention jobs
+        WebhookRetentionJob,
     ],
 })
 export class SubscriptionJobsModule { }

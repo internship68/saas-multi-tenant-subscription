@@ -1,0 +1,31 @@
+--- DB SNAPSHOT ---
+Subscription: { id: 'sub-test-1', status: 'CANCELED', plan: 'FREE' }
+Payments Count: 0
+Webhook Events: 25
+  Webhook: payment_method.attached UNHANDLED
+  Webhook: customer.created UNHANDLED
+  Webhook: product.created UNHANDLED
+  Webhook: plan.created UNHANDLED
+  Webhook: price.created UNHANDLED
+  Webhook: charge.succeeded UNHANDLED
+  Webhook: customer.updated UNHANDLED
+  Webhook: payment_intent.succeeded PENDING
+  Webhook: payment_intent.created UNHANDLED
+  Webhook: customer.subscription.created UNHANDLED
+  Webhook: customer.subscription.deleted PROCESSED
+  Webhook: charge.succeeded UNHANDLED
+  Webhook: payment_intent.created UNHANDLED
+  Webhook: payment_intent.succeeded PENDING
+  Webhook: charge.updated UNHANDLED
+  Webhook: customer.created UNHANDLED
+  Webhook: payment_method.attached UNHANDLED
+  Webhook: customer.updated UNHANDLED
+  Webhook: invoiceitem.created UNHANDLED
+  Webhook: invoice.created UNHANDLED
+  Webhook: customer.updated UNHANDLED
+  Webhook: charge.failed UNHANDLED
+  Webhook: payment_intent.created UNHANDLED
+  Webhook: invoice.updated UNHANDLED
+  Webhook: payment_intent.payment_failed UNHANDLED
+Audit Logs: 0
+-------------------

@@ -9,9 +9,13 @@ import { PrismaSubscriptionRepository } from './infrastructure/prisma-subscripti
 import { PrismaOrganizationRepository } from './infrastructure/prisma-organization.repository';
 import { ActiveSubscriptionGuard } from '../../shared/guards/active-subscription.guard';
 import { UsageModule } from '../usage/usage.module';
+import { PrismaModule } from '../../shared/prisma/prisma.module';
 
 @Module({
-  imports: [UsageModule],
+  imports: [
+    PrismaModule,
+    UsageModule,
+  ],
   controllers: [SubscriptionController],
   providers: [
     {
@@ -30,10 +34,10 @@ import { UsageModule } from '../usage/usage.module';
     ActiveSubscriptionGuard,
   ],
   exports: [
-    'SubscriptionRepository',     // 👈 สำคัญ
-    'OrganizationRepository',     // 👈 เผื่อ module อื่นใช้
-    CreateOrganizationUseCase,    // 👈 สำคัญมาก
+    'SubscriptionRepository',
+    'OrganizationRepository',
+    CreateOrganizationUseCase,
     GetSubscriptionStatusUseCase,
   ],
 })
-export class SubscriptionModule {}
+export class SubscriptionModule { }

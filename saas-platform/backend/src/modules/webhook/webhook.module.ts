@@ -7,46 +7,26 @@ import { HandlePaymentSucceededUseCase } from './application/handle-payment-succ
 import { HandleSubscriptionCanceledUseCase } from './application/handle-subscription-canceled.usecase';
 import { HandleInvoiceFailedUseCase } from './application/handle-invoice-failed.usecase';
 import { WebhookController } from './presentation/webhook.controller';
-import { PrismaSubscriptionRepository } from '../subscription/infrastructure/prisma-subscription.repository';
+import { SubscriptionModule } from '../subscription/subscription.module';
+import { PaymentModule } from '../payment/payment.module';
 
 /**
  * WebhookModule — wires Stripe webhook handling end-to-end.
- *
- * BullMQ root connection is provided globally by QueueInfrastructureModule.
- * This module only registers the STRIPE_WEBHOOK queue.
- *
- * Flow:
- *   Stripe → POST /webhooks/stripe
- *         → WebhookController (validates signature via StripeService)
- *         → BullMQ STRIPE_WEBHOOK queue
- *         → StripeWebhookProcessor
- *         → Handle*UseCase
- *         → Domain entity methods
- *         → PrismaSubscriptionRepository
  */
 @Module({
     imports: [
         BullModule.registerQueue({
             name: QUEUE_NAMES.STRIPE_WEBHOOK,
         }),
+        SubscriptionModule,
+        PaymentModule,
     ],
     controllers: [WebhookController],
     providers: [
-        // Infrastructure: Stripe signature validator + event parser
         StripeService,
-
-        // Infrastructure: Prisma repository (fulfils Domain interface)
-        {
-            provide: 'SubscriptionRepository',
-            useClass: PrismaSubscriptionRepository,
-        },
-
-        // Application UseCases
         HandlePaymentSucceededUseCase,
         HandleSubscriptionCanceledUseCase,
         HandleInvoiceFailedUseCase,
-
-        // BullMQ Processor
         StripeWebhookProcessor,
     ],
 })

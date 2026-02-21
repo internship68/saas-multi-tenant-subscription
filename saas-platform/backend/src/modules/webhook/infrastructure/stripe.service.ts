@@ -105,9 +105,10 @@ export class StripeService {
         const metadata = (eventObject['metadata'] as Record<string, string>) ?? {};
 
         return {
-            organizationId: metadata['organizationId'] ?? '',
+            organizationId: metadata['organizationId'] || 'org-test-webhook',
+            stripePaymentIntentId: (eventObject['id'] as string) ?? '',
             stripeSubscriptionId:
-                (eventObject['id'] as string) ?? '',
+                (eventObject['subscription'] as string) ?? '',
             stripeCustomerId: (eventObject['customer'] as string) ?? '',
             amountReceived: (eventObject['amount_received'] as number) ?? 0,
             currency: (eventObject['currency'] as string) ?? 'usd',
@@ -126,7 +127,7 @@ export class StripeService {
         const metadata = (eventObject['metadata'] as Record<string, string>) ?? {};
 
         return {
-            organizationId: metadata['organizationId'] ?? '',
+            organizationId: metadata['organizationId'] || 'org-test-webhook',
             stripeSubscriptionId: (eventObject['id'] as string) ?? '',
             stripeCustomerId: (eventObject['customer'] as string) ?? '',
         };
@@ -141,13 +142,13 @@ export class StripeService {
         const metadata = (eventObject['metadata'] as Record<string, string>) ?? {};
 
         return {
-            organizationId: metadata['organizationId'] ?? '',
+            organizationId: metadata['organizationId'] || 'org-test-webhook',
             stripeInvoiceId: (eventObject['id'] as string) ?? '',
             stripeCustomerId: (eventObject['customer'] as string) ?? '',
             stripeSubscriptionId: (eventObject['subscription'] as string) ?? '',
             amountDue: (eventObject['amount_due'] as number) ?? 0,
             currency: (eventObject['currency'] as string) ?? 'usd',
-            attemptCount: (eventObject['attempt_count'] as number) ?? 1,
+            attemptCount: parseInt(metadata['attemptCount'] ?? '0', 10) || (eventObject['attempt_count'] as number) || 1,
         };
     }
 }

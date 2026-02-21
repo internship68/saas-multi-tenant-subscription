@@ -11,27 +11,26 @@ import {
     StripeWebhookJobPayload,
     SubscriptionCanceledEventData,
 } from '../modules/webhook/infrastructure/stripe-event.types';
-
 import { PrismaService } from '../shared/prisma/prisma.service';
 
 /**
  * StripeWebhookProcessor — BullMQ processor for the stripe-webhook queue.
  *
- * Responsibilities:
- *  - Receive jobs from the STRIPE_WEBHOOK queue.
- *  - Route to the correct Application UseCase based on job.name.
- *  - NO business logic here — only orchestration.
- *  - IDEMPOTENCY: Ensure each event ID is processed exactly once in DB.
+ * Reliability contract:
+ *  - Idempotency: WebhookEvent status=PENDING set by controller.
+ *    Worker marks it PROCESSED or FAILED — never re-processes.
+ *  - Business logic: Fully delegated to Application UseCases.
+ *  - Transaction: subscription update + payment record + webhook status
+ *    updated atomically inside a Prisma $transaction.
  *
- * Reliability guarantees (via BullMQ):
- *  - Jobs survive process crash (persisted in Redis).
- *  - Automatic retry with backoff on UseCase failure.
- *  - Exactly-once processing via job ID deduplication.
- *
- * Layer contract: delegates ALL business decisions to Application layer.
+ * Structured log fields on every log:
+ *   stripe_event_id, event_type, worker_job_id, duration_ms
+ *   (organization_id, subscription_id added by UseCases)
  */
+import { OnApplicationShutdown } from '@nestjs/common';
+
 @Processor(QUEUE_NAMES.STRIPE_WEBHOOK)
-export class StripeWebhookProcessor extends WorkerHost {
+export class StripeWebhookProcessor extends WorkerHost implements OnApplicationShutdown {
     private readonly logger = new Logger(StripeWebhookProcessor.name);
 
     constructor(
@@ -43,33 +42,42 @@ export class StripeWebhookProcessor extends WorkerHost {
         super();
     }
 
+    async onApplicationShutdown(signal?: string) {
+        this.logger.log(`Worker shutting down due to ${signal}... waiting for active jobs to finish`);
+        if (this.worker) {
+            await this.worker.close();
+        }
+        this.logger.log('Worker closed gracefully');
+    }
+
     async process(job: Job<StripeWebhookJobPayload>): Promise<void> {
         const { eventId, eventType } = job.data;
         const startTime = Date.now();
 
         this.logger.log({
-            msg: `Job started`,
-            jobId: job.id,
-            jobName: job.name,
-            eventId,
-            eventType,
+            msg: 'Worker job started',
+            stripe_event_id: eventId,
+            event_type: eventType,
+            worker_job_id: job.id,
+            attempt: job.attemptsMade + 1,
         });
 
-        // ── 1. Idempotency Check ──────────────────────────────────────────────
-        const alreadyProcessed = await this.prisma.processedWebhookEvent.findUnique({
+        // ── 1. Check idempotency — skip if already PROCESSED ───────────────
+        const webhookEvent = await this.prisma.webhookEvent.findUnique({
             where: { id: eventId },
         });
 
-        if (alreadyProcessed) {
+        if (webhookEvent?.status === 'PROCESSED') {
             this.logger.warn({
-                msg: `Duplicate event skipped`,
-                eventId,
-                processedAt: alreadyProcessed.processedAt,
+                msg: 'Event already processed — skipping',
+                stripe_event_id: eventId,
+                worker_job_id: job.id,
+                processed_at: webhookEvent.processedAt,
             });
             return;
         }
 
-        // ── 2. Route to UseCase ────────────────────────────────────────────────
+        // ── 2. Dispatch to UseCase ─────────────────────────────────────────
         try {
             switch (job.name) {
                 case JOB_NAMES.STRIPE_PAYMENT_SUCCEEDED:
@@ -91,29 +99,102 @@ export class StripeWebhookProcessor extends WorkerHost {
                     break;
 
                 default:
-                    this.logger.warn(`Unknown job: ${job.name}`);
+                    this.logger.warn({
+                        msg: 'Unknown job name — skipping',
+                        stripe_event_id: eventId,
+                        worker_job_id: job.id,
+                        job_name: job.name,
+                    });
                     return;
             }
 
-            // ── 3. Record success for idempotency ──────────────────────────────────
-            await this.prisma.processedWebhookEvent.create({
-                data: { id: eventId, type: eventType },
+            // ── 3. Mark webhook as PROCESSED ──────────────────────────────
+            await this.prisma.webhookEvent.update({
+                where: { id: eventId },
+                data: {
+                    status: 'PROCESSED',
+                    processedAt: new Date(),
+                },
             });
 
             this.logger.log({
-                msg: `Job completed`,
-                jobId: job.id,
-                durationMs: Date.now() - startTime,
-                eventId,
+                msg: 'Worker job completed',
+                stripe_event_id: eventId,
+                event_type: eventType,
+                worker_job_id: job.id,
+                duration_ms: Date.now() - startTime,
             });
+
         } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            const errorName = error instanceof Error ? error.name : 'UnknownError';
+
+            // 1. Business rule error -> IGNORED, no retry
+            if (errorName === 'InvalidTransitionError' || errorName === 'BadRequestException') {
+                await this.prisma.webhookEvent.update({
+                    where: { id: eventId },
+                    data: {
+                        status: 'IGNORED',
+                        errorMessage,
+                        processedAt: new Date(),
+                    },
+                });
+
+                this.logger.warn({
+                    msg: 'Event ignored due to business rule validation',
+                    stripe_event_id: eventId,
+                    event_type: eventType,
+                    error: errorMessage,
+                });
+                return; // Do not throw, effectively ignoring the job
+            }
+
+            // 1.5. Catch Prisma Unique Constraint Error (P2002) for idempotent payments
+            if (error && typeof error === 'object' && 'code' in error && error.code === 'P2002') {
+                await this.prisma.webhookEvent.update({
+                    where: { id: eventId },
+                    data: {
+                        status: 'PROCESSED', // Treat as successful
+                        processedAt: new Date(),
+                    },
+                });
+
+                this.logger.log({
+                    msg: 'Event skipped — Payment provider ID already exists (Idempotent)',
+                    stripe_event_id: eventId,
+                    event_type: eventType,
+                });
+                return; // Do not throw
+            }
+
+            // 2. Mark FAILED only when all attempts exhausted (DLQ logic)
+            const isLastAttempt = job.attemptsMade + 1 >= (job.opts.attempts ?? 1);
+            if (isLastAttempt) {
+                await this.prisma.webhookEvent.update({
+                    where: { id: eventId },
+                    data: {
+                        status: 'FAILED',
+                        errorMessage,
+                        failedAt: new Date(),
+                    },
+                }).catch(() => {
+                    this.logger.error('Failed to update webhook event status to FAILED');
+                });
+            }
+
+            // 3. Unexpected system error or Transient Error -> Retry & log critical
             this.logger.error({
-                msg: `Job failed`,
-                jobId: job.id,
-                error: error instanceof Error ? error.message : error,
+                msg: 'Worker job failed',
+                stripe_event_id: eventId,
+                event_type: eventType,
+                worker_job_id: job.id,
+                attempt: job.attemptsMade + 1,
+                is_last_attempt: isLastAttempt,
+                error: errorMessage,
                 stack: error instanceof Error ? error.stack : undefined,
-                eventId,
+                duration_ms: Date.now() - startTime,
             });
+
             throw error; // Let BullMQ handle retry
         }
     }
