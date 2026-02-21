@@ -9,22 +9,6 @@ interface PrismaOrganization {
   createdAt: Date;
 }
 
-interface OrganizationDelegate {
-  upsert(args: {
-    where: { id: string };
-    create: PrismaOrganization;
-    update: PrismaOrganization;
-  }): Promise<PrismaOrganization>;
-
-  findUnique(args: {
-    where: { id: string };
-  }): Promise<PrismaOrganization | null>;
-}
-
-type PrismaServiceWithOrganization = PrismaService & {
-  organization: OrganizationDelegate;
-};
-
 function mapPrismaToDomain(model: PrismaOrganization): Organization {
   return Organization.restore({
     id: model.id,
@@ -35,16 +19,19 @@ function mapPrismaToDomain(model: PrismaOrganization): Organization {
 
 function mapDomainToPrisma(entity: Organization): PrismaOrganization {
   const json = entity.toJSON();
+
   return {
     id: json.id,
     name: json.name,
     createdAt: json.createdAt,
-  } as PrismaOrganization;
+  };
 }
 
 @Injectable()
-export class PrismaOrganizationRepository implements OrganizationRepository {
-  constructor(private readonly prisma: PrismaServiceWithOrganization) {}
+export class PrismaOrganizationRepository
+  implements OrganizationRepository
+{
+  constructor(private readonly prisma: PrismaService) {}
 
   async save(organization: Organization): Promise<void> {
     const data = mapDomainToPrisma(organization);
@@ -65,6 +52,6 @@ export class PrismaOrganizationRepository implements OrganizationRepository {
       return null;
     }
 
-    return mapPrismaToDomain(model);
+    return mapPrismaToDomain(model as PrismaOrganization);
   }
 }

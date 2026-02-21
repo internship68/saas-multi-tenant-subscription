@@ -8,7 +8,6 @@ import { GetSubscriptionStatusUseCase } from './application/get-subscription-sta
 import { PrismaSubscriptionRepository } from './infrastructure/prisma-subscription.repository';
 import { PrismaOrganizationRepository } from './infrastructure/prisma-organization.repository';
 import { ActiveSubscriptionGuard } from '../../shared/guards/active-subscription.guard';
-
 import { UsageModule } from '../usage/usage.module';
 
 @Module({
@@ -30,6 +29,11 @@ import { UsageModule } from '../usage/usage.module';
     GetSubscriptionStatusUseCase,
     ActiveSubscriptionGuard,
   ],
-  exports: [GetSubscriptionStatusUseCase],
+  exports: [
+    'SubscriptionRepository',     // 👈 สำคัญ
+    'OrganizationRepository',     // 👈 เผื่อ module อื่นใช้
+    CreateOrganizationUseCase,    // 👈 สำคัญมาก
+    GetSubscriptionStatusUseCase,
+  ],
 })
-export class SubscriptionModule { }
+export class SubscriptionModule {}

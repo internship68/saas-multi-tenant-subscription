@@ -7,9 +7,14 @@ import { JoinOrganizationUseCase } from './application/join-organization.usecase
 import { ListMembersUseCase } from './application/list-members.usecase';
 import { UserModule } from '../user/user.module';
 import { PrismaModule } from '../../shared/prisma/prisma.module';
+import { SubscriptionModule } from '../subscription/subscription.module';
 
 @Module({
-  imports: [UserModule, PrismaModule],
+  imports: [
+    UserModule,
+    PrismaModule,
+    SubscriptionModule, // 👈 เพิ่มตรงนี้
+  ],
   controllers: [OrganizationController],
   providers: [
     {
@@ -26,4 +31,4 @@ import { PrismaModule } from '../../shared/prisma/prisma.module';
   ],
   exports: ['OrganizationRepository'],
 })
-export class OrganizationModule { }
+export class OrganizationModule {}
