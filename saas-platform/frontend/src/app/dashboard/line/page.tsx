@@ -10,12 +10,24 @@ export default function ConnectLinePage() {
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        const token = localStorage.getItem('token');
+
+        if (!token || token === "undefined") {
+            alert("กรุณา Login ใหม่ (เซสชันหมดอายุหรือ Token ไม่ถูกต้อง)");
+            localStorage.removeItem("token");
+            setStatus("error");
+            return;
+        }
+
         setStatus("loading");
         try {
-            // Mocking the API call for now; this will match POST /line/connect on the backend
-            const res = await fetch("http://localhost:3000/line/connect", {
+            const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3002';
+            const res = await fetch(`${apiUrl}/products/line-enrollment/connect`, {
                 method: "POST",
-                headers: { "Content-Type": "application/json", "Authorization": `Bearer ${localStorage.getItem('token')}` },
+                headers: {
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${token}`
+                },
                 body: JSON.stringify({
                     channelId,
                     channelSecret,

@@ -17,6 +17,7 @@ import { AuditModule } from './core/audit/audit.module';
 import { HealthModule } from './core/health/health.module';
 import { BillingModule } from './core/billing/billing.module';
 import { LoggerModule } from 'nestjs-pino';
+import { LineEnrollmentModule } from './products/line-enrollment/line-enrollment.module';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { IdempotencyInterceptor } from './shared/interceptors/idempotency.interceptor';
 import { APP_INTERCEPTOR, APP_GUARD } from '@nestjs/core';
@@ -73,6 +74,7 @@ export class AppModule {
       UsageModule,
       HealthModule,
       BillingModule,
+      LineEnrollmentModule,
     ];
 
     const workerModules = [

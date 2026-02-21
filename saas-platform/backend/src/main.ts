@@ -11,6 +11,12 @@ async function bootstrap() {
         rawBody: true,
     });
 
+    app.enableCors({
+        origin: '*', // For development, allow all. In production, specify origins.
+        methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
+        credentials: true,
+    });
+
     // ── Graceful Shutdown ────────────────────────────────────────────────────
     // Listens for SIGTERM / SIGINT and calls onApplicationShutdown() on all
     // providers that implement it (e.g. StripeWebhookProcessor).
