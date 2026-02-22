@@ -3,7 +3,7 @@ import { IsNotEmpty, IsString, IsUrl } from 'class-validator';
 export class CreateCheckoutDto {
     @IsString()
     @IsNotEmpty()
-    priceId!: string;
+    plan!: string;
 
     @IsString()
     @IsUrl({}, { message: 'successUrl must be a valid URL' })

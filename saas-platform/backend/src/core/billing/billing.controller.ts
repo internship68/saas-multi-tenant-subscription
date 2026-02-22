@@ -3,7 +3,7 @@ import { BillingService } from './billing.service';
 import { CreateCheckoutDto } from './dto/create-checkout.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { PrismaService } from '../../shared/prisma/prisma.service';
-import { STRIPE_PRICES } from '../../shared/constants/price-keys';
+import { STRIPE_PRICES, PlanType } from '../../shared/constants/price-keys';
 
 @Controller('billing')
 @UseGuards(JwtAuthGuard)
@@ -16,7 +16,7 @@ export class BillingController {
     @Post('checkout')
     async createCheckoutSession(@Req() req: any, @Body() dto: CreateCheckoutDto) {
         const user = req.user;
-        const priceId = STRIPE_PRICES[dto.plan];
+        const priceId = STRIPE_PRICES[dto.plan as PlanType];
 
         const session = await this.billingService.createCheckoutSession({
             organizationId: user.organizationId,
