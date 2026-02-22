@@ -178,7 +178,9 @@ model LineLead {
   phoneNumber    String?
   interestedSubject String?
   aiConfidence   Float?
+  score          Float?   @default(0)
   status         String   @default("NEW") // NEW, CONTACTED, ENROLLED
+  notifiedAt     DateTime?
   createdAt      DateTime @default(now())
 
   organization Organization @relation(fields: [organizationId], references: [id])

@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE "LineLead" ADD COLUMN     "notifiedAt" TIMESTAMP(3),
+ADD COLUMN     "score" DOUBLE PRECISION DEFAULT 0;

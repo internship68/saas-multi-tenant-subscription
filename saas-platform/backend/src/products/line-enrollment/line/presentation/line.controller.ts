@@ -5,6 +5,7 @@ import { ConnectLineUseCase } from '../application/connect-line.usecase';
 import { ListLeadsUseCase } from '../application/list-leads.usecase';
 import { GetNotificationsUseCase } from '../application/get-notifications.usecase';
 import { MarkNotificationReadUseCase } from '../application/mark-notification-read.usecase';
+import { TakeoverLeadUseCase } from '../application/takeover-lead.usecase';
 import { JwtAuthGuard } from '../../../../core/auth/guards/jwt-auth.guard';
 
 @Controller('products/line-enrollment')
@@ -15,7 +16,14 @@ export class LineController {
         private readonly listLeads: ListLeadsUseCase,
         private readonly getNotifications: GetNotificationsUseCase,
         private readonly markNotificationRead: MarkNotificationReadUseCase,
+        private readonly takeoverLead: TakeoverLeadUseCase,
     ) { }
+
+    @Post('leads/:lineUserId/takeover')
+    @UseGuards(JwtAuthGuard)
+    async takeover(@Req() req: any, @Param('lineUserId') lineUserId: string) {
+        return this.takeoverLead.execute(req.user.organizationId, lineUserId);
+    }
 
     @Post('notifications/:id/read')
     @UseGuards(JwtAuthGuard)

@@ -128,7 +128,9 @@ export class HandleLineWebhookUseCase {
                 let extractionResult: StudentInfo | null = null;
                 let replyResult: ReplyResult | null = null;
 
-                if (aiEnabled) {
+                const isHandover = conversation.state === 'HANDOVER_TO_ADMIN';
+
+                if (aiEnabled && !isHandover) {
                     try {
                         // 1. Extract Info
                         extractionResult = await this.extractAi.execute(
@@ -159,6 +161,9 @@ export class HandleLineWebhookUseCase {
                     } catch (err: any) {
                         this.logger.error(`AI Flow failed: ${err.message}. Using fallback.`);
                     }
+                } else if (isHandover) {
+                    this.logger.log(`AI skipped for ${lineUserId} (HANDOVER_TO_ADMIN)`);
+                    return; // Skip sending any automated reply if admin took over
                 }
 
                 // --- PHASE 4.3: TX B - COMMIT UPDATES & USAGE ---
@@ -172,12 +177,42 @@ export class HandleLineWebhookUseCase {
                         if (!lead.phoneNumber && extractionResult.phoneNumber) updateData.phoneNumber = extractionResult.phoneNumber;
                         if (!lead.interestedSubject && extractionResult.interestedSubject) updateData.interestedSubject = extractionResult.interestedSubject;
 
+                        // Calculate Score
+                        const fields = ['studentName', 'gradeLevel', 'phoneNumber', 'interestedSubject', 'parentName'];
+                        let completeness = 0;
+                        fields.forEach(f => {
+                            if ((lead as any)[f] || (updateData as any)[f] || (extractionResult as any)[f]) completeness += 0.2;
+                        });
+
+                        const newScore = (completeness * 0.4) + (extractionResult.confidence * 0.6);
+                        updateData.score = newScore;
+                        updateData.aiConfidence = extractionResult.confidence;
+
                         if (Object.keys(updateData).length > 0) {
                             await tx.lineLead.update({
                                 where: { id: lead.id },
-                                data: { ...updateData, aiConfidence: extractionResult.confidence }
+                                data: updateData
                             });
                         }
+                    }
+
+                    // 1.1 Notification Trigger (Admin Alert)
+                    if (nextState === 'READY_TO_CONTACT' && !lead.notifiedAt) {
+                        await tx.lineLead.update({
+                            where: { id: lead.id },
+                            data: { notifiedAt: new Date() }
+                        });
+
+                        await tx.auditLog.create({
+                            data: {
+                                organizationId: orgId,
+                                action: 'ADMIN_NOTIFICATION_READY',
+                                entityType: 'LineLead',
+                                entityId: lead.id,
+                                metadata: { message: "Lead is ready for contact!" } as any
+                            }
+                        });
+                        this.logger.log(`Admin notified for lead ${lead.id}`);
                     }
 
                     // 2. Update Conversation state
