@@ -1,10 +1,11 @@
 import { Injectable, Logger, BadRequestException, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../../../shared/prisma/prisma.service';
 import * as crypto from 'crypto';
 import axios from 'axios';
 
 import { ExtractStudentInfoUseCase, StudentInfo } from '../../ai/application/extract-student-info.usecase';
-import { GenerateReplyUseCase } from '../../ai/application/generate-reply.usecase';
+import { GenerateReplyUseCase, ReplyResult } from '../../ai/application/generate-reply.usecase';
 
 export interface WebhookPayload {
     integrationId: string;
@@ -19,6 +20,7 @@ export class HandleLineWebhookUseCase {
 
     constructor(
         private readonly prisma: PrismaService,
+        private readonly configService: ConfigService,
         private readonly extractAi: ExtractStudentInfoUseCase,
         private readonly generateReplyAi: GenerateReplyUseCase,
     ) { }
@@ -70,169 +72,155 @@ export class HandleLineWebhookUseCase {
 
                 if (!lineUserId) continue;
 
-                // Atomic transaction: Create/Find Lead and Update Conversation State
-                await this.prisma.$transaction(async (tx: any) => {
-                    // 4.1 Check if lead exists
-                    let lead = await tx.lineLead.findFirst({
-                        where: {
-                            organizationId: integration.organizationId,
-                            lineUserId: lineUserId,
-                        }
-                    });
+                // --- PHASE 4.1: TX A - SAVE & PREVIEW HISTORY ---
+                const { lead, conversation, history } = await this.prisma.$transaction(async (tx: any) => {
+                    const orgId = integration.organizationId;
 
-                    // 4.1.1 Get or Create Conversation
-                    let conversation = await tx.lineConversation.findUnique({
-                        where: {
-                            organizationId_lineUserId: {
-                                organizationId: integration.organizationId,
-                                lineUserId: lineUserId,
-                            }
-                        }
+                    // 1. Get or Create Conversation
+                    let currentConv = await tx.lineConversation.findUnique({
+                        where: { organizationId_lineUserId: { organizationId: orgId, lineUserId } }
                     });
-
-                    if (!conversation) {
-                        conversation = await tx.lineConversation.create({
-                            data: {
-                                organizationId: integration.organizationId,
-                                lineUserId: lineUserId,
-                                state: 'NEW',
-                            }
+                    if (!currentConv) {
+                        currentConv = await tx.lineConversation.create({
+                            data: { organizationId: orgId, lineUserId, state: 'NEW' }
                         });
                     }
 
-                    // 4.2 ถ้าไม่เคยมี ให้สร้างใหม่
-                    if (!lead) {
-                        let displayName = null;
+                    // 2. Get or Create Lead
+                    let currentLead = await tx.lineLead.findFirst({
+                        where: { organizationId: orgId, lineUserId }
+                    });
+                    if (!currentLead) {
+                        // Fetch profile for new lead
+                        let displayName = 'LINE User';
                         try {
                             const profileRes = await axios.get(`https://api.line.me/v2/bot/profile/${lineUserId}`, {
                                 headers: { Authorization: `Bearer ${integration.channelAccessToken}` }
                             });
                             displayName = profileRes.data.displayName;
-                        } catch (err: any) {
-                            this.logger.error(`Failed to fetch LINE profile for ${lineUserId}: ${err.message}`);
-                        }
+                        } catch (err) { }
 
-                        lead = await tx.lineLead.create({
-                            data: {
-                                organizationId: integration.organizationId,
-                                lineUserId: lineUserId,
-                                studentName: displayName,
-                                status: 'NEW',
-                            }
-                        });
-
-                        await tx.auditLog.create({
-                            data: {
-                                organizationId: integration.organizationId,
-                                action: 'NEW_LINE_LEAD',
-                                entityType: 'LineLead',
-                                entityId: lead.id,
-                                metadata: { lineUserId, displayName, text } as any
-                            }
-                        });
-                    } else {
-                        // Returning lead notification
-                        await tx.auditLog.create({
-                            data: {
-                                organizationId: integration.organizationId,
-                                action: 'RETURNING_LINE_LEAD',
-                                entityType: 'LineLead',
-                                entityId: lead.id,
-                                metadata: { lineUserId, displayName: lead.studentName, text } as any
-                            }
+                        currentLead = await tx.lineLead.create({
+                            data: { organizationId: orgId, lineUserId, studentName: displayName, status: 'NEW' }
                         });
                     }
 
-                    // 4.3 บันทึกข้อความลงในประวัติ (Message History)
-                    await (tx as any).lineMessage.create({
-                        data: {
-                            organizationId: integration.organizationId,
-                            lineUserId: lineUserId,
-                            role: 'user',
-                            content: text,
-                        }
+                    // 3. Save incoming message
+                    await tx.lineMessage.create({
+                        data: { organizationId: orgId, lineUserId, role: 'user', content: text }
                     });
 
-                    // 4.4 Get conversation history for AI
-                    const history = await (tx as any).lineMessage.findMany({
-                        where: { organizationId: integration.organizationId, lineUserId },
+                    // 4. Get recent history
+                    const recentLogs = await tx.lineMessage.findMany({
+                        where: { organizationId: orgId, lineUserId },
                         orderBy: { createdAt: 'asc' },
-                        take: 10,
+                        take: 10
                     });
 
-                    // 4.5 AI Extraction Layer (Structured Data)
-                    const aiResult: StudentInfo = await this.extractAi.execute(
-                        history.map((h: { role: any; content: any; }) => ({ role: h.role, content: h.content }))
-                    );
+                    return { lead: currentLead, conversation: currentConv, history: recentLogs };
+                });
 
-                    const updateData: any = {};
-                    // 4.6 Update Lead if AI found something (Temporarily ignoring confidence threshold for Gemini to ensure fields are picked up easily)
-                    if (aiResult.gradeLevel && !lead.gradeLevel) updateData.gradeLevel = aiResult.gradeLevel;
-                    if (aiResult.interestedSubject && !lead.interestedSubject) updateData.interestedSubject = aiResult.interestedSubject;
-                    if (aiResult.phoneNumber && !lead.phoneNumber) updateData.phoneNumber = aiResult.phoneNumber;
-                    // @ts-ignore
-                    updateData.aiConfidence = aiResult.confidence;
+                // --- PHASE 4.2: AI PROCESSING (OUTSIDE TX) ---
+                let replyText = "ขอบคุณที่ทักทายนะคะ ตอนนี้แอดมินกำลังเร่งตรวจสอบข้อมูลให้ค่ะ อีกสักครู่จะติดต่อกลับไปนะคะ";
+                let nextState = conversation.state;
+                const aiEnabled = this.configService.get('AI_ENABLED') === 'true';
 
-                    if (Object.keys(updateData).length > 1 || (Object.keys(updateData).length === 1 && !('aiConfidence' in updateData))) {
-                        await tx.lineLead.update({
-                            where: { id: lead.id },
-                            data: updateData
-                        });
-                        this.logger.log(`AI extracted & updated lead ${lead.id}: ${JSON.stringify(updateData)}`);
-                    }
+                let extractionResult: StudentInfo | null = null;
+                let replyResult: ReplyResult | null = null;
 
-                    // 4.7 Generate Next Reply (Phase 2 AI-Assisted)
-                    const availableCourses = await tx.course.findMany({
-                        where: { organizationId: integration.organizationId },
-                        select: { name: true }
-                    });
-
-                    const replyContext = {
-                        state: conversation.state,
-                        lead: {
-                            gradeLevel: updateData.gradeLevel || lead.gradeLevel || aiResult.gradeLevel,
-                            interestedSubject: updateData.interestedSubject || lead.interestedSubject || aiResult.interestedSubject,
-                            phoneNumber: updateData.phoneNumber || lead.phoneNumber || aiResult.phoneNumber,
-                            parentName: lead.parentName || aiResult.parentName || undefined,
-                        },
-                        availableCourses: availableCourses.map((c: any) => c.name)
-                    };
-                    this.logger.log(`[DEBUG AI LOOP] DB Lead: gradeLevel=${lead.gradeLevel}, phoneNumber=${lead.phoneNumber}`);
-                    this.logger.log(`[DEBUG AI LOOP] Reply Context sent to AI: ${JSON.stringify(replyContext)}`);
-
-                    const aiReply = await this.generateReplyAi.execute(replyContext);
-                    let replyText = aiReply.replyText;
-
-                    await tx.lineConversation.update({
-                        where: { id: conversation.id },
-                        data: { state: aiReply.nextState }
-                    });
-
-                    // 4.8 Send Reply via LINE API
+                if (aiEnabled) {
                     try {
-                        await axios.post('https://api.line.me/v2/bot/message/reply', {
-                            replyToken: replyToken,
-                            messages: [{ type: 'text', text: replyText }]
-                        }, {
-                            headers: {
-                                'Authorization': `Bearer ${integration.channelAccessToken}`,
-                                'Content-Type': 'application/json',
-                            }
+                        // 1. Extract Info
+                        extractionResult = await this.extractAi.execute(
+                            history.map((h: any) => ({ role: h.role, content: h.content }))
+                        );
+
+                        // 2. Get Courses (Limit to 5 as requested)
+                        const courses = await this.prisma.course.findMany({
+                            where: { organizationId: integration.organizationId },
+                            take: 5
                         });
 
-                        // 4.9 Save assistant message to history
-                        await (tx as any).lineMessage.create({
+                        // 3. Generate Smart Reply
+                        replyResult = await this.generateReplyAi.execute({
+                            state: conversation.state,
+                            lead: {
+                                gradeLevel: extractionResult.gradeLevel || lead.gradeLevel,
+                                phoneNumber: extractionResult.phoneNumber || lead.phoneNumber,
+                                interestedSubject: extractionResult.interestedSubject || lead.interestedSubject,
+                                parentName: lead.parentName || extractionResult.parentName,
+                            },
+                            availableCourses: courses.map(c => c.name)
+                        });
+
+                        replyText = replyResult.replyText;
+                        nextState = replyResult.nextState;
+                        this.logger.log(`AI Gen successful for ${lineUserId}`);
+                    } catch (err: any) {
+                        this.logger.error(`AI Flow failed: ${err.message}. Using fallback.`);
+                    }
+                }
+
+                // --- PHASE 4.3: TX B - COMMIT UPDATES & USAGE ---
+                await this.prisma.$transaction(async (tx: any) => {
+                    const orgId = integration.organizationId;
+
+                    // 1. Update Lead (Only if confidence >= 0.6)
+                    if (extractionResult && extractionResult.confidence >= 0.6) {
+                        const updateData: any = {};
+                        if (!lead.gradeLevel && extractionResult.gradeLevel) updateData.gradeLevel = extractionResult.gradeLevel;
+                        if (!lead.phoneNumber && extractionResult.phoneNumber) updateData.phoneNumber = extractionResult.phoneNumber;
+                        if (!lead.interestedSubject && extractionResult.interestedSubject) updateData.interestedSubject = extractionResult.interestedSubject;
+
+                        if (Object.keys(updateData).length > 0) {
+                            await tx.lineLead.update({
+                                where: { id: lead.id },
+                                data: { ...updateData, aiConfidence: extractionResult.confidence }
+                            });
+                        }
+                    }
+
+                    // 2. Update Conversation state
+                    if (nextState !== conversation.state) {
+                        await tx.lineConversation.update({
+                            where: { id: conversation.id },
+                            data: { state: nextState }
+                        });
+                    }
+
+                    // 3. Save Assistant Message
+                    await tx.lineMessage.create({
+                        data: { organizationId: orgId, lineUserId, role: 'assistant', content: replyText }
+                    });
+
+                    // 4. Track Usage
+                    if (extractionResult?.usage || replyResult?.usage) {
+                        const totalTokens = (extractionResult?.usage?.totalTokens || 0) + (replyResult?.usage?.totalTokens || 0);
+                        await tx.aiUsage.create({
                             data: {
-                                organizationId: integration.organizationId,
-                                lineUserId: lineUserId,
-                                role: 'assistant',
-                                content: replyText,
+                                organizationId: orgId,
+                                tokensUsed: totalTokens,
+                                model: 'gemini-2.0-flash',
+                                type: 'WEBHOOK_FLOW'
                             }
                         });
-                    } catch (err: any) {
-                        this.logger.error(`Failed to send LINE reply: ${err.message}`);
                     }
-                }, { timeout: 30000 });
+                });
+
+                // --- PHASE 4.4: EXTERNAL - SEND LINE MESSAGE ---
+                try {
+                    await axios.post('https://api.line.me/v2/bot/message/reply', {
+                        replyToken,
+                        messages: [{ type: 'text', text: replyText }]
+                    }, {
+                        headers: {
+                            'Authorization': `Bearer ${integration.channelAccessToken}`,
+                            'Content-Type': 'application/json'
+                        }
+                    });
+                } catch (err: any) {
+                    this.logger.error(`Failed to send LINE reply: ${err.message}`);
+                }
             }
         }
     }

@@ -21,6 +21,7 @@ model Organization {
   lineConversations  LineConversation[]
   lineMessages       LineMessage[]
   courses            Course[]
+  aiUsages           AiUsage[]
 }
 
 model User {
@@ -222,4 +223,17 @@ model Course {
 
   organization Organization @relation(fields: [organizationId], references: [id])
   @@index([organizationId])
+}
+
+model AiUsage {
+  id             String   @id @default(uuid())
+  organizationId String
+  tokensUsed     Int
+  model          String
+  type           String   // e.g., "EXTRACTION", "REPLY"
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  @@index([organizationId])
+  @@index([createdAt])
 }

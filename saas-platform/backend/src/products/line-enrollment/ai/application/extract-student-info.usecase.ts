@@ -8,6 +8,9 @@ export interface StudentInfo {
     phoneNumber: string | null;
     parentName: string | null;
     confidence: number;
+    usage?: {
+        totalTokens: number;
+    };
 }
 
 @Injectable()
@@ -52,13 +55,15 @@ Return JSON in this format:
   "interestedSubject": string | null,
   "phoneNumber": string | null,
   "parentName": string | null,
-  "confidence": number (0-1)
+  "confidence": number (0 to 1)
 }
 
 Rules:
-1. If info is missing, use null.
-2. gradeLevel should be like "ป.1" or "ม.5"
-3. confidence reflects how sure you are about the extracted data.
+1. ONLY extract information that is explicitly stated or very clearly implied.
+2. gradeLevel should be localized (e.g., "ป.1", "ม.5").
+3. phoneNumbers should be cleaned of non-digit characters.
+4. "confidence" is your certainty about the EXTRACTION, not the user's certainty.
+5. Provide ONLY the JSON object.
 
 Conversation History:
 ${history.map(h => `${h.role}: ${h.content}`).join('\n')}
@@ -83,14 +88,21 @@ ${history.map(h => `${h.role}: ${h.content}`).join('\n')}
             }
         );
 
-        const result = JSON.parse(response.data.candidates[0].content.parts[0].text);
-        this.logger.log(`[DEBUG EXTRACTION] Found: ${JSON.stringify(result)}`);
+        const data = response.data;
+        const usage = data.usageMetadata;
+        const result = JSON.parse(data.candidates[0].content.parts[0].text);
+
+        this.logger.log(`[DEBUG EXTRACTION] Found: ${JSON.stringify(result)} | Usage: ${usage?.totalTokenCount || 0}`);
+
         return {
             gradeLevel: result.gradeLevel ?? null,
             interestedSubject: result.interestedSubject ?? null,
             phoneNumber: result.phoneNumber ?? null,
             parentName: result.parentName ?? null,
             confidence: result.confidence ?? 0,
+            usage: {
+                totalTokens: usage?.totalTokenCount || 0
+            }
         };
     }
 

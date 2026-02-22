@@ -16,6 +16,9 @@ export interface ReplyContext {
 export interface ReplyResult {
     replyText: string;
     nextState: string;
+    usage?: {
+        totalTokens: number;
+    };
 }
 
 @Injectable()
@@ -60,21 +63,23 @@ Current Profile:
 - Phone: ${context.lead.phoneNumber || 'Missing'}
 - Subject: ${context.lead.interestedSubject || 'Missing'}
 - Parent Name: ${context.lead.parentName || 'Missing'}
+- Available Courses: ${context.availableCourses?.join(', ') || 'N/A'}
 
 Current State: ${context.state}
 
 Rules:
 - NEVER make up information.
-- Ask exactly ONE short, polite question to collect ONE missing piece of information.
 - Provide a responsive message based on the input context.
-- If both Grade and Phone are present, acknowledge and politely inform them that an admin will contact them soon.
+- Decide the "nextState" based on these DETERMINISTIC rules:
+    - If "Grade" is missing: set nextState to "COLLECTING_INFO" and ASK for the grade.
+    - If "Grade" is present but "Phone" is missing: set nextState to "COLLECTING_INFO" and ASK for the phone number.
+    - If BOTH "Grade" and "Phone" are present: set nextState to "READY_TO_CONTACT" and inform that an admin will call.
 - Output strictly in JSON format.
-- "nextState" must be one of: NEW, COLLECTING_INFO, READY_TO_CONTACT, HANDOVER_TO_ADMIN
 
 Output format:
 {
   "replyText": "your reply text",
-  "nextState": "NEW | COLLECTING_INFO | READY_TO_CONTACT | HANDOVER_TO_ADMIN"
+  "nextState": "COLLECTING_INFO | READY_TO_CONTACT | HANDOVER_TO_ADMIN"
 }
 `;
 
@@ -99,13 +104,20 @@ Output format:
 
         const data = response.data;
         const usage = data.usageMetadata;
-        this.logger.log(`Token usage [Generate Reply] - Prompt: ${usage?.promptTokenCount || 0}, Completion: ${usage?.candidatesTokenCount || 0}, Total: ${usage?.totalTokenCount || 0}`);
+
+        if (!data.candidates?.[0]?.content?.parts?.[0]?.text) {
+            throw new Error('AI response is empty');
+        }
 
         const resultJson = JSON.parse(data.candidates[0].content.parts[0].text);
+        this.logger.log(`Token usage [Reply] - Total: ${usage?.totalTokenCount || 0}`);
 
         return {
             replyText: resultJson.replyText || this.getFallbackReply(context).replyText,
             nextState: resultJson.nextState || 'COLLECTING_INFO',
+            usage: {
+                totalTokens: usage?.totalTokenCount || 0
+            }
         };
     }
 
