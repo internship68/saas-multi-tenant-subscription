@@ -4,6 +4,8 @@ import { Prisma } from '@prisma/client';
 import * as crypto from 'crypto';
 import axios from 'axios';
 
+import { ExtractStudentInfoUseCase, StudentInfo } from '../../ai/application/extract-student-info.usecase';
+
 export interface WebhookPayload {
     integrationId: string;
     signature: string;
@@ -15,7 +17,10 @@ export interface WebhookPayload {
 export class HandleLineWebhookUseCase {
     private readonly logger = new Logger(HandleLineWebhookUseCase.name);
 
-    constructor(private readonly prisma: PrismaService) { }
+    constructor(
+        private readonly prisma: PrismaService,
+        private readonly extractAi: ExtractStudentInfoUseCase,
+    ) { }
 
     async execute(payload: WebhookPayload): Promise<void> {
         const { integrationId, signature, rawBody, events } = payload;
@@ -31,8 +36,7 @@ export class HandleLineWebhookUseCase {
             throw new NotFoundException('Integration not found');
         }
 
-        // ── 2. ตรวจสอบสถานะการเงิน (Feature Gate เบื้องต้นแบบ Hardcode ใน Flow นึ้)
-        // จริงๆ เราควรผ่าน Service แต่เพื่อความเร็วเราเช็คผ่าน Prisma ก่อนว่า Active ไหม
+        // ── 2. ตรวจสอบสถานะการเงิน (Feature Gate)
         const activeSub = await this.prisma.subscription.findFirst({
             where: {
                 organizationId: integration.organizationId,
@@ -42,10 +46,8 @@ export class HandleLineWebhookUseCase {
 
         if (!activeSub) {
             this.logger.warn(`Organization ${integration.organizationId} has no active subscription. Blocking webhook.`);
-            return; // ไม่ Throw error ปล่อยผ่านไปให้ตีดกลับ 200 LINE จะได้ไม่ retry รบกวน
+            return;
         }
-
-        // TODO: ในอนาคตเช็คว่า PLAN มีสิทธิใช้ LINE_ENROLLMENT ไหม
 
         // ── 3. Validate LINE Signature ──────────────────────────────────────
         const expectedSignature = crypto
@@ -63,12 +65,13 @@ export class HandleLineWebhookUseCase {
             if (event.type === 'message' && event.message.type === 'text') {
                 const lineUserId = event.source.userId;
                 const text = event.message.text;
+                const replyToken = event.replyToken;
 
                 if (!lineUserId) continue;
 
                 // Atomic transaction: Create/Find Lead and Update Conversation State
                 await this.prisma.$transaction(async (tx) => {
-                    // Check if lead exists
+                    // 4.1 Check if lead exists
                     let lead = await tx.lineLead.findFirst({
                         where: {
                             organizationId: integration.organizationId,
@@ -76,9 +79,8 @@ export class HandleLineWebhookUseCase {
                         }
                     });
 
-                    // ถ้าไม่เดยมี ให้สร้างใหม่
+                    // 4.2 ถ้าไม่เคยมี ให้สร้างใหม่
                     if (!lead) {
-                        // ดึง Profile จาก LINE
                         let displayName = null;
                         try {
                             const profileRes = await axios.get(`https://api.line.me/v2/bot/profile/${lineUserId}`, {
@@ -93,83 +95,34 @@ export class HandleLineWebhookUseCase {
                             data: {
                                 organizationId: integration.organizationId,
                                 lineUserId: lineUserId,
-                                studentName: displayName, // บันทึกชื่อจาก LINE
+                                studentName: displayName,
                                 status: 'NEW',
                             }
                         });
 
-                        // สร้าง AuditLog เพื่อทำหน้าที่เป็นความแจ้งเตือน (Notification)
                         await tx.auditLog.create({
                             data: {
                                 organizationId: integration.organizationId,
                                 action: 'NEW_LINE_LEAD',
                                 entityType: 'LineLead',
                                 entityId: lead.id,
-                                metadata: {
-                                    lineUserId,
-                                    displayName,
-                                    text
-                                } as any
+                                metadata: { lineUserId, displayName, text } as any
                             }
                         });
-
-                        this.logger.log(`Created new LineLead: ${lead.id} (${displayName})`);
                     } else {
-                        // กรณีเป็นลูกค้าเก่าทักมาใหม่ (Existing Lead)
-                        // ให้ส่งแจ้งเตือน "Returning Lead" ด้วย เพื่อให้แอดมินรู้ว่าเขากลับมาคุยต่อ
-                        if (!lead.studentName) {
-                            // ถ้ามี lead แล้วแต่ยังไม่มีชื่อ (อาจจะเพราะครั้งแรกดึงพลาด) ให้ลองดึงใหม่
-                            try {
-                                const profileRes = await axios.get(`https://api.line.me/v2/bot/profile/${lineUserId}`, {
-                                    headers: { Authorization: `Bearer ${integration.channelAccessToken}` }
-                                });
-                                const displayName = profileRes.data.displayName;
-                                if (displayName) {
-                                    lead = await tx.lineLead.update({
-                                        where: { id: lead.id },
-                                        data: { studentName: displayName }
-                                    });
-                                }
-                            } catch (err) {
-                                this.logger.error(`Failed to fetch LINE profile update for ${lineUserId}`);
-                            }
-                        }
-
+                        // Returning lead notification
                         await tx.auditLog.create({
                             data: {
                                 organizationId: integration.organizationId,
                                 action: 'RETURNING_LINE_LEAD',
                                 entityType: 'LineLead',
                                 entityId: lead.id,
-                                metadata: {
-                                    lineUserId,
-                                    displayName: lead.studentName,
-                                    text
-                                } as any
+                                metadata: { lineUserId, displayName: lead.studentName, text } as any
                             }
                         });
                     }
 
-                    // สร้างหรืออัปเดต State การพูดคุย
-                    const conversation = await tx.lineConversation.upsert({
-                        where: {
-                            organizationId_lineUserId: {
-                                organizationId: integration.organizationId,
-                                lineUserId: lineUserId,
-                            }
-                        },
-                        update: {
-                            updatedAt: new Date(),
-                            // state อาจจะเปลี่ยนอิงตาม Flow (ตอนนี้ปล่อยคงที่ไว้ก่อน)
-                        },
-                        create: {
-                            organizationId: integration.organizationId,
-                            lineUserId: lineUserId,
-                            state: 'INITIAL',
-                        }
-                    });
-
-                    // บันทึกข้อความลงในประวัติ (Message History)
+                    // 4.3 บันทึกข้อความลงในประวัติ (Message History)
                     await (tx as any).lineMessage.create({
                         data: {
                             organizationId: integration.organizationId,
@@ -179,11 +132,67 @@ export class HandleLineWebhookUseCase {
                         }
                     });
 
-                    this.logger.log(`Received message: "${text}" from ${lineUserId} in org ${integration.organizationId}`);
+                    // 4.4 Get conversation history for AI
+                    const history = await (tx as any).lineMessage.findMany({
+                        where: { organizationId: integration.organizationId, lineUserId },
+                        orderBy: { createdAt: 'asc' },
+                        take: 10,
+                    });
 
-                    // TODO (Next step):
-                    // 1. ส่งข้อความให้ AI (callLLM)
-                    // 2. ตอบกลับลูกค้า (replyMessage via LINE SDK)
+                    // 4.5 AI Extraction Layer (Structured Data)
+                    const aiResult: StudentInfo = await this.extractAi.execute(
+                        history.map((h: { role: any; content: any; }) => ({ role: h.role, content: h.content }))
+                    );
+
+                    // 4.6 Update Lead if AI found something (with confidence threshold)
+                    if (aiResult.confidence > 0.6) {
+                        const updateData: any = {};
+                        if (aiResult.gradeLevel && !lead.grade) updateData.grade = aiResult.gradeLevel;
+                        if (aiResult.interestedSubject && !lead.courseInterest) updateData.courseInterest = aiResult.interestedSubject;
+                        if (aiResult.phoneNumber && !lead.phone) updateData.phone = aiResult.phoneNumber;
+
+                        if (Object.keys(updateData).length > 0) {
+                            await tx.lineLead.update({
+                                where: { id: lead.id },
+                                data: updateData
+                            });
+                            this.logger.log(`AI extracted & updated lead ${lead.id}: ${JSON.stringify(updateData)}`);
+                        }
+                    }
+
+                    // 4.7 Generate Next Reply (Rule-based / AI-powered logic soon)
+                    let replyText = "ขอบคุณที่สนใจครับ เจ้าหน้าที่จะติดต่อกลับโดยเร็วที่สุด";
+
+                    if (!lead.grade && !aiResult.gradeLevel) {
+                        replyText = "สวัสดีครับ ไม่ทราบว่าน้องกำลังเรียนอยู่ชั้นไหนครับ?";
+                    } else if (!lead.phone && !aiResult.phoneNumber) {
+                        replyText = "รบกวนขอเบอร์โทรศัพท์สำหรับติดต่อกลับด้วยนะครับ";
+                    }
+
+                    // 4.8 Send Reply via LINE API
+                    try {
+                        await axios.post('https://api.line.me/v2/bot/message/reply', {
+                            replyToken: replyToken,
+                            messages: [{ type: 'text', text: replyText }]
+                        }, {
+                            headers: {
+                                'Authorization': `Bearer ${integration.channelAccessToken}`,
+                                'Content-Type': 'application/json',
+                            }
+                        });
+
+                        // 4.9 Save assistant message to history
+                        await (tx as any).lineMessage.create({
+                            data: {
+                                organizationId: integration.organizationId,
+                                lineUserId: lineUserId,
+                                role: 'assistant',
+                                content: replyText,
+                            }
+                        });
+                    } catch (err: any) {
+                        this.logger.error(`Failed to send LINE reply: ${err.message}`);
+                    }
                 });
             }
         }
