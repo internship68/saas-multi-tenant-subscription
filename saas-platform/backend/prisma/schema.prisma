@@ -19,6 +19,7 @@ model Organization {
   lineIntegrations   LineIntegration[]
   lineLeads          LineLead[]
   lineConversations  LineConversation[]
+  lineMessages       LineMessage[]
 }
 
 model User {
@@ -77,6 +78,7 @@ model AuditLog {
   entityId       String
   actorId        String?   // Who performed the action (userId)
   metadata       Json?     // Store old/new values or extra info
+  isRead         Boolean   @default(false)
   createdAt      DateTime  @default(now())
 
   @@index([organizationId])
@@ -191,4 +193,18 @@ model LineConversation {
   organization Organization @relation(fields: [organizationId], references: [id])
   @@unique([organizationId, lineUserId])
   @@index([organizationId])
+}
+
+model LineMessage {
+  id             String   @id @default(uuid())
+  organizationId String
+  lineUserId     String
+  role           String   // "user" or "assistant"
+  content        String
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  @@index([organizationId])
+  @@index([lineUserId])
+  @@index([createdAt])
 }

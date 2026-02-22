@@ -11,6 +11,9 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                 </div>
 
                 <nav className="flex-1 py-4 flex flex-col gap-1 px-3">
+                    <Link href="/dashboard" className="px-3 py-2 text-sm font-medium text-gray-700 hover:bg-blue-50 hover:text-blue-600 rounded-lg transition">
+                        🏠 Dashboard
+                    </Link>
                     <Link href="/dashboard/line" className="px-3 py-2 text-sm font-medium text-gray-700 hover:bg-blue-50 hover:text-blue-600 rounded-lg transition">
                         🔗 Connect LINE
                     </Link>

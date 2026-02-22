@@ -2,6 +2,7 @@ import { Injectable, Logger, BadRequestException, NotFoundException, ForbiddenEx
 import { PrismaService } from '../../../../shared/prisma/prisma.service';
 import { Prisma } from '@prisma/client';
 import * as crypto from 'crypto';
+import axios from 'axios';
 
 export interface WebhookPayload {
     integrationId: string;
@@ -66,7 +67,7 @@ export class HandleLineWebhookUseCase {
                 if (!lineUserId) continue;
 
                 // Atomic transaction: Create/Find Lead and Update Conversation State
-                await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+                await this.prisma.$transaction(async (tx) => {
                     // Check if lead exists
                     let lead = await tx.lineLead.findFirst({
                         where: {
@@ -77,14 +78,76 @@ export class HandleLineWebhookUseCase {
 
                     // ถ้าไม่เดยมี ให้สร้างใหม่
                     if (!lead) {
+                        // ดึง Profile จาก LINE
+                        let displayName = null;
+                        try {
+                            const profileRes = await axios.get(`https://api.line.me/v2/bot/profile/${lineUserId}`, {
+                                headers: { Authorization: `Bearer ${integration.channelAccessToken}` }
+                            });
+                            displayName = profileRes.data.displayName;
+                        } catch (err: any) {
+                            this.logger.error(`Failed to fetch LINE profile for ${lineUserId}: ${err.message}`);
+                        }
+
                         lead = await tx.lineLead.create({
                             data: {
                                 organizationId: integration.organizationId,
                                 lineUserId: lineUserId,
+                                studentName: displayName, // บันทึกชื่อจาก LINE
                                 status: 'NEW',
                             }
                         });
-                        this.logger.log(`Created new LineLead: ${lead.id}`);
+
+                        // สร้าง AuditLog เพื่อทำหน้าที่เป็นความแจ้งเตือน (Notification)
+                        await tx.auditLog.create({
+                            data: {
+                                organizationId: integration.organizationId,
+                                action: 'NEW_LINE_LEAD',
+                                entityType: 'LineLead',
+                                entityId: lead.id,
+                                metadata: {
+                                    lineUserId,
+                                    displayName,
+                                    text
+                                } as any
+                            }
+                        });
+
+                        this.logger.log(`Created new LineLead: ${lead.id} (${displayName})`);
+                    } else {
+                        // กรณีเป็นลูกค้าเก่าทักมาใหม่ (Existing Lead)
+                        // ให้ส่งแจ้งเตือน "Returning Lead" ด้วย เพื่อให้แอดมินรู้ว่าเขากลับมาคุยต่อ
+                        if (!lead.studentName) {
+                            // ถ้ามี lead แล้วแต่ยังไม่มีชื่อ (อาจจะเพราะครั้งแรกดึงพลาด) ให้ลองดึงใหม่
+                            try {
+                                const profileRes = await axios.get(`https://api.line.me/v2/bot/profile/${lineUserId}`, {
+                                    headers: { Authorization: `Bearer ${integration.channelAccessToken}` }
+                                });
+                                const displayName = profileRes.data.displayName;
+                                if (displayName) {
+                                    lead = await tx.lineLead.update({
+                                        where: { id: lead.id },
+                                        data: { studentName: displayName }
+                                    });
+                                }
+                            } catch (err) {
+                                this.logger.error(`Failed to fetch LINE profile update for ${lineUserId}`);
+                            }
+                        }
+
+                        await tx.auditLog.create({
+                            data: {
+                                organizationId: integration.organizationId,
+                                action: 'RETURNING_LINE_LEAD',
+                                entityType: 'LineLead',
+                                entityId: lead.id,
+                                metadata: {
+                                    lineUserId,
+                                    displayName: lead.studentName,
+                                    text
+                                } as any
+                            }
+                        });
                     }
 
                     // สร้างหรืออัปเดต State การพูดคุย
@@ -103,6 +166,16 @@ export class HandleLineWebhookUseCase {
                             organizationId: integration.organizationId,
                             lineUserId: lineUserId,
                             state: 'INITIAL',
+                        }
+                    });
+
+                    // บันทึกข้อความลงในประวัติ (Message History)
+                    await (tx as any).lineMessage.create({
+                        data: {
+                            organizationId: integration.organizationId,
+                            lineUserId: lineUserId,
+                            role: 'user',
+                            content: text,
                         }
                     });
 

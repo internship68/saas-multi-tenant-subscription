@@ -4,11 +4,11 @@ import { useEffect, useState } from "react";
 
 interface Lead {
     id: string;
-    studentName: string | null;
-    grade: string | null;
-    phone: string | null;
+    name: string;
+    grade: string;
+    phone: string;
     status: string;
-    courseInterest: string | null;
+    course: string;
     createdAt: string;
 }
 
@@ -17,18 +17,35 @@ export default function LeadsPage() {
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        // Mock or fetch leads from API
-        // GET /leads
-        const mockLeads: Lead[] = [
-            { id: "1", studentName: "น้องเอิร์ธ", grade: "ม.4", phone: "081-234-5678", status: "NEW", courseInterest: "ฟิสิกส์ ม.ปลาย", createdAt: new Date().toISOString() },
-            { id: "2", studentName: "น้องพลอย", grade: "ม.6", phone: "089-876-5432", status: "CONTACTED", courseInterest: "เคมี TCAS", createdAt: new Date().toISOString() },
-        ];
+        const fetchLeads = async () => {
+            const token = localStorage.getItem('token');
+            const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3002';
 
-        // Simulate API fetch delay
-        setTimeout(() => {
-            setLeads(mockLeads);
-            setLoading(false);
-        }, 1000);
+            if (!token) {
+                setLoading(false);
+                return;
+            }
+
+            try {
+                const res = await fetch(`${apiUrl}/products/line-enrollment/leads`, {
+                    headers: {
+                        "Authorization": `Bearer ${token}`
+                    }
+                });
+                const responseData = await res.json();
+
+                if (res.ok) {
+                    // Adapt to ResponseInterceptor wrapping { success: true, data: [...] }
+                    setLeads(responseData.data || []);
+                }
+            } catch (err) {
+                console.error("Failed to fetch leads:", err);
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        fetchLeads();
     }, []);
 
     return (
@@ -66,14 +83,14 @@ export default function LeadsPage() {
                             ) : (
                                 leads.map((lead) => (
                                     <tr key={lead.id} className="hover:bg-gray-50 transition">
-                                        <td className="px-6 py-4 font-medium text-gray-900">{lead.studentName || "ไม่ระบุ"}</td>
-                                        <td className="px-6 py-4 text-gray-600">{lead.grade || "ไม่ระบุ"}</td>
-                                        <td className="px-6 py-4 text-gray-600">{lead.courseInterest || "ไม่ระบุ"}</td>
-                                        <td className="px-6 py-4 text-gray-600">{lead.phone || "ไม่ระบุ"}</td>
+                                        <td className="px-6 py-4 font-medium text-gray-900">{lead.name}</td>
+                                        <td className="px-6 py-4 text-gray-600">{lead.grade}</td>
+                                        <td className="px-6 py-4 text-gray-600">{lead.course}</td>
+                                        <td className="px-6 py-4 text-gray-600">{lead.phone}</td>
                                         <td className="px-6 py-4">
                                             <span className={`px-2.5 py-1 text-xs font-semibold rounded-full ${lead.status === 'NEW' ? 'bg-red-100 text-red-700' :
-                                                    lead.status === 'CONTACTED' ? 'bg-yellow-100 text-yellow-800' :
-                                                        'bg-green-100 text-green-700'
+                                                lead.status === 'CONTACTED' ? 'bg-yellow-100 text-yellow-800' :
+                                                    'bg-green-100 text-green-700'
                                                 }`}>
                                                 {lead.status === 'NEW' ? '🔥 ร้อน (มาใหม่)' :
                                                     lead.status === 'CONTACTED' ? 'กำลังพูดคุย' :
