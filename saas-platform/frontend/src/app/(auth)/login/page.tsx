@@ -2,6 +2,13 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import SplashCursor from "@/components/SplashCursor";
+import { Loader2, Mail, Lock } from "lucide-react";
 
 export default function LoginPage() {
     const [email, setEmail] = useState("");
@@ -26,7 +33,6 @@ export default function LoginPage() {
             const data = await res.json();
 
             if (res.ok) {
-                // Backend wraps response in { success: true, data: { ... } }
                 const result = data.data || data;
                 const tokenToStore = result.token || result.accessToken;
 
@@ -36,7 +42,6 @@ export default function LoginPage() {
                     router.push("/dashboard/line");
                 } else {
                     setError("Login success but no token received");
-                    console.log("Response data:", data);
                 }
             } else {
                 setError(data.message || "Login failed");
@@ -49,58 +54,77 @@ export default function LoginPage() {
     };
 
     return (
-        <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
-            <div className="max-w-md w-full space-y-8 p-8 bg-white shadow-xl rounded-2xl border border-gray-100">
-                <div>
-                    <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
-                        ยินดีต้อนรับกลับมา
-                    </h2>
-                    <p className="mt-2 text-center text-sm text-gray-600">
-                        เข้าสู่ระบบเพื่อจัดการระบบ AI LINE Enrollment
-                    </p>
-                </div>
-                <form className="mt-8 space-y-6" onSubmit={handleLogin}>
-                    {error && (
-                        <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm text-center border border-red-100">
-                            {error}
-                        </div>
-                    )}
-                    <div className="rounded-md shadow-sm -space-y-px">
-                        <div>
-                            <label className="sr-only">Email address</label>
-                            <input
-                                type="email"
-                                required
-                                value={email}
-                                onChange={(e) => setEmail(e.target.value)}
-                                className="appearance-none rounded-none relative block w-full px-4 py-3 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-t-lg focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
-                                placeholder="Email address"
-                            />
-                        </div>
-                        <div>
-                            <label className="sr-only">Password</label>
-                            <input
-                                type="password"
-                                required
-                                value={password}
-                                onChange={(e) => setPassword(e.target.value)}
-                                className="appearance-none rounded-none relative block w-full px-4 py-3 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-b-lg focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
-                                placeholder="Password"
-                            />
-                        </div>
-                    </div>
+        <div className="relative min-h-screen flex items-center justify-center p-4 overflow-hidden bg-black">
+            <SplashCursor />
 
-                    <div>
-                        <button
+            <div className="absolute inset-0 bg-gradient-to-tr from-blue-500/10 via-transparent to-purple-500/10 pointer-events-none animate-pulse" />
+
+            <Card className="z-10 w-full max-w-md bg-white/5 backdrop-blur-2xl border-white/10 shadow-2xl text-white">
+                <CardHeader className="space-y-1">
+                    <CardTitle className="text-3xl font-bold tracking-tight text-center bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
+                        Welcome Back
+                    </CardTitle>
+                    <CardDescription className="text-center text-gray-400">
+                        Enter your credentials to access your dashboard
+                    </CardDescription>
+                </CardHeader>
+                <form onSubmit={handleLogin}>
+                    <CardContent className="space-y-4">
+                        {error && (
+                            <div className="p-3 text-sm font-medium text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg text-center animate-shake">
+                                {error}
+                            </div>
+                        )}
+                        <div className="space-y-2">
+                            <Label htmlFor="email" className="text-gray-300">Email Address</Label>
+                            <div className="relative group">
+                                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500 group-focus-within:text-blue-400 transition-colors" />
+                                <Input
+                                    id="email"
+                                    type="email"
+                                    placeholder="name@example.com"
+                                    required
+                                    value={email}
+                                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEmail(e.target.value)}
+                                    className="bg-white/5 border-white/10 focus:border-blue-500/50 pl-10 h-12 text-white placeholder:text-gray-600 transition-all"
+                                />
+                            </div>
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="password" title="Password" className="text-gray-300">Password</Label>
+                            <div className="relative group">
+                                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500 group-focus-within:text-blue-400 transition-colors" />
+                                <Input
+                                    id="password"
+                                    type="password"
+                                    required
+                                    value={password}
+                                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPassword(e.target.value)}
+                                    className="bg-white/5 border-white/10 focus:border-blue-500/50 pl-10 h-12 text-white placeholder:text-gray-600 transition-all"
+                                />
+                            </div>
+                        </div>
+                    </CardContent>
+                    <CardFooter className="flex flex-col space-y-4">
+                        <Button
                             type="submit"
+                            className="w-full h-12 text-lg font-semibold bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 border-none shadow-lg shadow-blue-500/20 transition-all active:scale-[0.98]"
                             disabled={loading}
-                            className="group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-lg text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition disabled:opacity-50"
                         >
-                            {loading ? "กำลังเข้าสู่ระบบ..." : "เข้าสู่ระบบ"}
-                        </button>
-                    </div>
+                            {loading ? (
+                                <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                            ) : null}
+                            {loading ? "Logging in..." : "Sign In"}
+                        </Button>
+                        <div className="text-center text-sm text-gray-400">
+                            Don't have an account?{" "}
+                            <Link href="/register" className="text-blue-400 hover:text-blue-300 font-medium transition-colors">
+                                Create an account
+                            </Link>
+                        </div>
+                    </CardFooter>
                 </form>
-            </div>
+            </Card>
         </div>
     );
 }
