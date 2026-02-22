@@ -5,6 +5,7 @@ import * as crypto from 'crypto';
 import axios from 'axios';
 
 import { ExtractStudentInfoUseCase, StudentInfo } from '../../ai/application/extract-student-info.usecase';
+import { GenerateReplyUseCase } from '../../ai/application/generate-reply.usecase';
 
 export interface WebhookPayload {
     integrationId: string;
@@ -20,6 +21,7 @@ export class HandleLineWebhookUseCase {
     constructor(
         private readonly prisma: PrismaService,
         private readonly extractAi: ExtractStudentInfoUseCase,
+        private readonly generateReplyAi: GenerateReplyUseCase,
     ) { }
 
     async execute(payload: WebhookPayload): Promise<void> {
@@ -78,6 +80,26 @@ export class HandleLineWebhookUseCase {
                             lineUserId: lineUserId,
                         }
                     });
+
+                    // 4.1.1 Get or Create Conversation
+                    let conversation = await tx.lineConversation.findUnique({
+                        where: {
+                            organizationId_lineUserId: {
+                                organizationId: integration.organizationId,
+                                lineUserId: lineUserId,
+                            }
+                        }
+                    });
+
+                    if (!conversation) {
+                        conversation = await tx.lineConversation.create({
+                            data: {
+                                organizationId: integration.organizationId,
+                                lineUserId: lineUserId,
+                                state: 'NEW',
+                            }
+                        });
+                    }
 
                     // 4.2 ถ้าไม่เคยมี ให้สร้างใหม่
                     if (!lead) {
@@ -144,30 +166,43 @@ export class HandleLineWebhookUseCase {
                         history.map((h: { role: any; content: any; }) => ({ role: h.role, content: h.content }))
                     );
 
-                    // 4.6 Update Lead if AI found something (with confidence threshold)
-                    if (aiResult.confidence > 0.6) {
-                        const updateData: any = {};
-                        if (aiResult.gradeLevel && !lead.grade) updateData.grade = aiResult.gradeLevel;
-                        if (aiResult.interestedSubject && !lead.courseInterest) updateData.courseInterest = aiResult.interestedSubject;
-                        if (aiResult.phoneNumber && !lead.phone) updateData.phone = aiResult.phoneNumber;
+                    const updateData: any = {};
+                    // 4.6 Update Lead if AI found something (Temporarily ignoring confidence threshold for Gemini to ensure fields are picked up easily)
+                    if (aiResult.gradeLevel && !lead.grade) updateData.grade = aiResult.gradeLevel;
+                    if (aiResult.interestedSubject && !lead.courseInterest) updateData.courseInterest = aiResult.interestedSubject;
+                    if (aiResult.phoneNumber && !lead.phone) updateData.phone = aiResult.phoneNumber;
+                    // @ts-ignore
+                    updateData.aiConfidence = aiResult.confidence;
 
-                        if (Object.keys(updateData).length > 0) {
-                            await tx.lineLead.update({
-                                where: { id: lead.id },
-                                data: updateData
-                            });
-                            this.logger.log(`AI extracted & updated lead ${lead.id}: ${JSON.stringify(updateData)}`);
+                    if (Object.keys(updateData).length > 1 || (Object.keys(updateData).length === 1 && !('aiConfidence' in updateData))) {
+                        await tx.lineLead.update({
+                            where: { id: lead.id },
+                            data: updateData
+                        });
+                        this.logger.log(`AI extracted & updated lead ${lead.id}: ${JSON.stringify(updateData)}`);
+                    }
+
+                    // 4.7 Generate Next Reply (Phase 2 AI-Assisted)
+                    const replyContext = {
+                        state: conversation.state,
+                        lead: {
+                            gradeLevel: updateData.grade || lead.grade || aiResult.gradeLevel,
+                            interestedSubject: updateData.courseInterest || lead.courseInterest || aiResult.interestedSubject,
+                            phoneNumber: updateData.phone || lead.phone || aiResult.phoneNumber,
+                            // @ts-ignore
+                            parentName: lead.parentName || undefined,
                         }
-                    }
+                    };
+                    this.logger.log(`[DEBUG AI LOOP] DB Lead: grade=${lead.grade}, phone=${lead.phone}`);
+                    this.logger.log(`[DEBUG AI LOOP] Reply Context sent to AI: ${JSON.stringify(replyContext)}`);
 
-                    // 4.7 Generate Next Reply (Rule-based / AI-powered logic soon)
-                    let replyText = "ขอบคุณที่สนใจครับ เจ้าหน้าที่จะติดต่อกลับโดยเร็วที่สุด";
+                    const aiReply = await this.generateReplyAi.execute(replyContext);
+                    let replyText = aiReply.replyText;
 
-                    if (!lead.grade && !aiResult.gradeLevel) {
-                        replyText = "สวัสดีครับ ไม่ทราบว่าน้องกำลังเรียนอยู่ชั้นไหนครับ?";
-                    } else if (!lead.phone && !aiResult.phoneNumber) {
-                        replyText = "รบกวนขอเบอร์โทรศัพท์สำหรับติดต่อกลับด้วยนะครับ";
-                    }
+                    await tx.lineConversation.update({
+                        where: { id: conversation.id },
+                        data: { state: aiReply.nextState }
+                    });
 
                     // 4.8 Send Reply via LINE API
                     try {
@@ -193,7 +228,7 @@ export class HandleLineWebhookUseCase {
                     } catch (err: any) {
                         this.logger.error(`Failed to send LINE reply: ${err.message}`);
                     }
-                });
+                }, { timeout: 30000 });
             }
         }
     }

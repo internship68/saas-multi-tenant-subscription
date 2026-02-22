@@ -16,12 +16,12 @@ export class ExtractStudentInfoUseCase {
     private readonly apiKey: string;
 
     constructor(private readonly configService: ConfigService) {
-        this.apiKey = this.configService.get<string>('OPENAI_API_KEY') || '';
+        this.apiKey = (this.configService.get<string>('GEMINI_API_KEY') || '').trim();
     }
 
     async execute(history: { role: string; content: string }[]): Promise<StudentInfo> {
         if (!this.apiKey) {
-            this.logger.warn('OPENAI_API_KEY is not set. Returning null info.');
+            this.logger.warn('GEMINI_API_KEY is not set. Returning null info.');
             return {
                 gradeLevel: null,
                 interestedSubject: null,
@@ -46,7 +46,7 @@ Return JSON in this format:
 
 Rules:
 1. If info is missing, use null.
-2. gradeLevel should be like "ป.1", "ม.3", etc.
+2. gradeLevel should be like "ป.1" or "ม.5"
 3. confidence reflects how sure you are about the extracted data.
 
 Conversation History:
@@ -55,25 +55,25 @@ ${history.map(h => `${h.role}: ${h.content}`).join('\n')}
 
         try {
             const response = await axios.post(
-                'https://api.openai.com/v1/chat/completions',
+                `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${this.apiKey}`,
                 {
-                    model: 'gpt-4o-mini',
-                    messages: [
-                        { role: 'system', content: 'You are a structured data extractor. Respond only with JSON.' },
-                        { role: 'user', content: prompt },
-                    ],
-                    response_format: { type: 'json_object' },
-                    temperature: 0,
+                    contents: [{
+                        parts: [{ text: 'You are a structured data extractor. Respond only with JSON.\n\n' + prompt }]
+                    }],
+                    generationConfig: {
+                        temperature: 0,
+                        responseMimeType: 'application/json'
+                    }
                 },
                 {
                     headers: {
-                        'Authorization': `Bearer ${this.apiKey}`,
                         'Content-Type': 'application/json',
                     },
                 }
             );
 
-            const result = JSON.parse(response.data.choices[0].message.content);
+            const result = JSON.parse(response.data.candidates[0].content.parts[0].text);
+            this.logger.log(`[DEBUG EXTRACTION] Found: ${JSON.stringify(result)}`);
             return {
                 gradeLevel: result.gradeLevel ?? null,
                 interestedSubject: result.interestedSubject ?? null,

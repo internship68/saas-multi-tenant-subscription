@@ -171,9 +171,11 @@ model LineLead {
   organizationId String
   lineUserId     String
   studentName    String?
+  parentName     String?
   grade          String?
   phone          String?
   courseInterest String?
+  aiConfidence   Float?
   status         String   @default("NEW") // NEW, CONTACTED, ENROLLED
   createdAt      DateTime @default(now())
 
@@ -186,7 +188,7 @@ model LineConversation {
   id             String   @id @default(uuid())
   organizationId String
   lineUserId     String
-  state          String   @default("INITIAL") // INITIAL, ASKING_INFO, READY_TO_ENROLL
+  state          String   @default("NEW") // NEW, COLLECTING_INFO, READY_TO_CONTACT, HANDOVER_TO_ADMIN
   lastIntent     String?
   updatedAt      DateTime @updatedAt
 

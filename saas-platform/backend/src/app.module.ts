@@ -35,8 +35,9 @@ export class AppModule {
       LoggerModule.forRoot({
         pinoHttp: {
           level: process.env.NODE_ENV !== 'production' ? 'debug' : 'info',
+          autoLogging: false,
           transport: process.env.NODE_ENV !== 'production'
-            ? { target: 'pino-pretty', options: { colorize: true } }
+            ? { target: 'pino-pretty', options: { colorize: true, singleLine: true, ignore: 'pid,hostname,req,res' } }
             : undefined,
           // Include correlation ID in all logs
           genReqId: (req) => req.headers['x-request-id'] || req.id,
