@@ -6,6 +6,7 @@ import axios from 'axios';
 
 import { ExtractStudentInfoUseCase, StudentInfo } from '../../ai/application/extract-student-info.usecase';
 import { GenerateReplyUseCase, ReplyResult } from '../../ai/application/generate-reply.usecase';
+import { NotifyAdminUseCase } from './notify-admin.usecase';
 
 export interface WebhookPayload {
     integrationId: string;
@@ -23,6 +24,7 @@ export class HandleLineWebhookUseCase {
         private readonly configService: ConfigService,
         private readonly extractAi: ExtractStudentInfoUseCase,
         private readonly generateReplyAi: GenerateReplyUseCase,
+        private readonly notifyAdmin: NotifyAdminUseCase,
     ) { }
 
     async execute(payload: WebhookPayload): Promise<void> {
@@ -166,11 +168,14 @@ export class HandleLineWebhookUseCase {
                     return; // Skip sending any automated reply if admin took over
                 }
 
+                let finalLeadForNotify: any = null;
+
                 // --- PHASE 4.3: TX B - COMMIT UPDATES & USAGE ---
                 await this.prisma.$transaction(async (tx: any) => {
                     const orgId = integration.organizationId;
 
                     // 1. Update Lead (Only if confidence >= 0.6)
+                    let currentLeadState = { ...lead };
                     if (extractionResult && extractionResult.confidence >= 0.6) {
                         const updateData: any = {};
                         if (!lead.gradeLevel && extractionResult.gradeLevel) updateData.gradeLevel = extractionResult.gradeLevel;
@@ -189,19 +194,21 @@ export class HandleLineWebhookUseCase {
                         updateData.aiConfidence = extractionResult.confidence;
 
                         if (Object.keys(updateData).length > 0) {
-                            await tx.lineLead.update({
+                            const updated = await tx.lineLead.update({
                                 where: { id: lead.id },
                                 data: updateData
                             });
+                            currentLeadState = { ...updated };
                         }
                     }
 
                     // 1.1 Notification Trigger (Admin Alert)
                     if (nextState === 'READY_TO_CONTACT' && !lead.notifiedAt) {
-                        await tx.lineLead.update({
+                        const updated = await tx.lineLead.update({
                             where: { id: lead.id },
                             data: { notifiedAt: new Date() }
                         });
+                        currentLeadState = { ...updated };
 
                         await tx.auditLog.create({
                             data: {
@@ -213,6 +220,7 @@ export class HandleLineWebhookUseCase {
                             }
                         });
                         this.logger.log(`Admin notified for lead ${lead.id}`);
+                        finalLeadForNotify = currentLeadState;
                     }
 
                     // 2. Update Conversation state
@@ -242,7 +250,20 @@ export class HandleLineWebhookUseCase {
                     }
                 });
 
-                // --- PHASE 4.4: EXTERNAL - SEND LINE MESSAGE ---
+                // --- PHASE 4.4: NOTIFY ADMIN (OUTSIDE TX) ---
+                if (finalLeadForNotify) {
+                    this.notifyAdmin.execute({
+                        organizationId: integration.organizationId,
+                        leadId: finalLeadForNotify.id,
+                        studentName: finalLeadForNotify.studentName,
+                        gradeLevel: finalLeadForNotify.gradeLevel,
+                        interestedSubject: finalLeadForNotify.interestedSubject,
+                        phoneNumber: finalLeadForNotify.phoneNumber,
+                        score: finalLeadForNotify.score || 0
+                    }).catch(err => this.logger.error(`Deferred notification failed: ${err.message}`));
+                }
+
+                // --- PHASE 4.5: EXTERNAL - SEND LINE MESSAGE ---
                 try {
                     await axios.post('https://api.line.me/v2/bot/message/reply', {
                         replyToken,

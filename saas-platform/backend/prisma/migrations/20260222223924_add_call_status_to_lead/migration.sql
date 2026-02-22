@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE "LineLead" ADD COLUMN     "callStatus" TEXT NOT NULL DEFAULT 'NOT_CALLED';

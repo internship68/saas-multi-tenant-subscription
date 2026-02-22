@@ -162,6 +162,7 @@ model LineIntegration {
   channelSecret      String
   channelAccessToken String?
   webhookUrl         String?
+  adminNotifyToken   String?
   createdAt          DateTime @default(now())
 
   organization Organization @relation(fields: [organizationId], references: [id])
@@ -180,6 +181,7 @@ model LineLead {
   aiConfidence   Float?
   score          Float?   @default(0)
   status         String   @default("NEW") // NEW, CONTACTED, ENROLLED
+  callStatus     String   @default("NOT_CALLED") // NOT_CALLED, CONTACTED, ENROLLED, LOST
   notifiedAt     DateTime?
   createdAt      DateTime @default(now())
 
