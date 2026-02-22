@@ -1,6 +1,5 @@
 import { Injectable, Logger, BadRequestException, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../../../../shared/prisma/prisma.service';
-import { Prisma } from '@prisma/client';
 import * as crypto from 'crypto';
 import axios from 'axios';
 
@@ -62,7 +61,7 @@ export class HandleLineWebhookUseCase {
             throw new BadRequestException('Invalid signature');
         }
 
-        // ── 4. Process Events ────────────────────────────────────────────────
+        // 4.Process Events
         for (const event of events) {
             if (event.type === 'message' && event.message.type === 'text') {
                 const lineUserId = event.source.userId;
@@ -72,7 +71,7 @@ export class HandleLineWebhookUseCase {
                 if (!lineUserId) continue;
 
                 // Atomic transaction: Create/Find Lead and Update Conversation State
-                await this.prisma.$transaction(async (tx) => {
+                await this.prisma.$transaction(async (tx: any) => {
                     // 4.1 Check if lead exists
                     let lead = await tx.lineLead.findFirst({
                         where: {
@@ -168,9 +167,9 @@ export class HandleLineWebhookUseCase {
 
                     const updateData: any = {};
                     // 4.6 Update Lead if AI found something (Temporarily ignoring confidence threshold for Gemini to ensure fields are picked up easily)
-                    if (aiResult.gradeLevel && !lead.grade) updateData.grade = aiResult.gradeLevel;
-                    if (aiResult.interestedSubject && !lead.courseInterest) updateData.courseInterest = aiResult.interestedSubject;
-                    if (aiResult.phoneNumber && !lead.phone) updateData.phone = aiResult.phoneNumber;
+                    if (aiResult.gradeLevel && !lead.gradeLevel) updateData.gradeLevel = aiResult.gradeLevel;
+                    if (aiResult.interestedSubject && !lead.interestedSubject) updateData.interestedSubject = aiResult.interestedSubject;
+                    if (aiResult.phoneNumber && !lead.phoneNumber) updateData.phoneNumber = aiResult.phoneNumber;
                     // @ts-ignore
                     updateData.aiConfidence = aiResult.confidence;
 
@@ -183,17 +182,22 @@ export class HandleLineWebhookUseCase {
                     }
 
                     // 4.7 Generate Next Reply (Phase 2 AI-Assisted)
+                    const availableCourses = await tx.course.findMany({
+                        where: { organizationId: integration.organizationId },
+                        select: { name: true }
+                    });
+
                     const replyContext = {
                         state: conversation.state,
                         lead: {
-                            gradeLevel: updateData.grade || lead.grade || aiResult.gradeLevel,
-                            interestedSubject: updateData.courseInterest || lead.courseInterest || aiResult.interestedSubject,
-                            phoneNumber: updateData.phone || lead.phone || aiResult.phoneNumber,
-                            // @ts-ignore
-                            parentName: lead.parentName || undefined,
-                        }
+                            gradeLevel: updateData.gradeLevel || lead.gradeLevel || aiResult.gradeLevel,
+                            interestedSubject: updateData.interestedSubject || lead.interestedSubject || aiResult.interestedSubject,
+                            phoneNumber: updateData.phoneNumber || lead.phoneNumber || aiResult.phoneNumber,
+                            parentName: lead.parentName || aiResult.parentName || undefined,
+                        },
+                        availableCourses: availableCourses.map((c: any) => c.name)
                     };
-                    this.logger.log(`[DEBUG AI LOOP] DB Lead: grade=${lead.grade}, phone=${lead.phone}`);
+                    this.logger.log(`[DEBUG AI LOOP] DB Lead: gradeLevel=${lead.gradeLevel}, phoneNumber=${lead.phoneNumber}`);
                     this.logger.log(`[DEBUG AI LOOP] Reply Context sent to AI: ${JSON.stringify(replyContext)}`);
 
                     const aiReply = await this.generateReplyAi.execute(replyContext);

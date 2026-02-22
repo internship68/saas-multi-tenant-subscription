@@ -20,6 +20,7 @@ model Organization {
   lineLeads          LineLead[]
   lineConversations  LineConversation[]
   lineMessages       LineMessage[]
+  courses            Course[]
 }
 
 model User {
@@ -172,9 +173,9 @@ model LineLead {
   lineUserId     String
   studentName    String?
   parentName     String?
-  grade          String?
-  phone          String?
-  courseInterest String?
+  gradeLevel     String?
+  phoneNumber    String?
+  interestedSubject String?
   aiConfidence   Float?
   status         String   @default("NEW") // NEW, CONTACTED, ENROLLED
   createdAt      DateTime @default(now())
@@ -209,4 +210,16 @@ model LineMessage {
   @@index([organizationId])
   @@index([lineUserId])
   @@index([createdAt])
+}
+
+model Course {
+  id             String   @id @default(uuid())
+  organizationId String
+  name           String
+  description    String?
+  price          Float?
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  @@index([organizationId])
 }

@@ -14,9 +14,9 @@ export class ListLeadsUseCase {
         return leads.map(lead => ({
             id: lead.id,
             name: lead.studentName || 'ลูกค้าใหม่ (รอชื่อ)',
-            grade: lead.grade || '-',
-            course: lead.courseInterest || '-',
-            phone: lead.phone || '-',
+            grade: lead.gradeLevel || '-',
+            course: lead.interestedSubject || '-',
+            phone: lead.phoneNumber || '-',
             status: lead.status,
             createdAt: lead.createdAt,
         }));
